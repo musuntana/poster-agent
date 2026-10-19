@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poster Agent · M1</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Poster Agent · M1</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<main class="shell">
+<section class="panel">
+<h2>01 · 新建海报</h2>
+<form id="createForm">
+<div class="row"><label>商品图片（推荐透明 PNG）*</label><input type="file" name="product" accept="image/png,image/jpeg,image/webp" required></div>
+<div class="row"><label>品牌 Logo（可选）</label><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></div>
+<div class="row"><label>主标题*</label><input name="title" required maxlength="35" value="双十一限时优惠"></div>
+<div class="row"><label>副标题</label><input name="subtitle" maxlength="45" value="智能清洁 · 品质生活"></div>
+<div class="split"><div class="row"><label>活动价*</label><input name="price" type="number" step="0.01" min="0.01" value="199" required></div><div class="row"><label>原价</label><input name="original_price" type="number" step="0.01" value="399"></div></div>
+<div class="row"><label>按钮文案</label><input name="cta" maxlength="12" value="立即抢购"></div>
+<div class="row"><label>画面风格</label><input name="style" maxlength="80" value="蓝色科技风"></div>
+<div class="row"><label>背景模式</label><select name="background_mode"><option value="local">本地渐变（无需 API Key，不是 AI）</option><option value="ai">真实 Qwen-Image（需要 API Key，会计费）</option></select></div>
+<div class="actions"><button id="generate" type="submit">生成海报</button><span id="createStatus" class="tip">上传商品图后生成</span></div>
+</form>
+<p class="tip">M1 限制：单张 1024×1024；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
+</section>
+<section class="panel">
+<h2>02 · 预览与修改</h2>
+<span class="tag" id="source">尚未生成</span><br>
+<img id="preview" class="preview" alt="生成海报预览">
+<p class="tip" id="metadata">生成成功后会显示版本与链接。</p>
+<section id="editor" class="mt hidden">
+<h2>03 · 修改内容（不重新生成背景）</h2>
+<form id="editForm">
+<div class="row"><label>主标题</label><input id="editTitle" maxlength="35"></div>
+<div class="split"><div class="row"><label>活动价</label><input id="editPrice" type="number" step="0.01" min="0.01"></div><div class="row"><label>原价</label><input id="editOriginal" type="number" step="0.01"></div></div>
+<div class="actions"><button id="saveEdit" type="submit">保存新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
+</form>
+<div class="tip" id="editStatus"></div><div class="tip" id="history"></div>
+</section>
+</section>
+</main>
+<script>
+let current = null;
+const $ = id => document.getElementById(id);
+function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
+function display(data){current=data; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+$('createForm').addEventListener('submit',async e=>{e.preventDefault();$('generate').disabled=true;$('createStatus').textContent='正在生成，AI 模式可能耗时较久…';$('createStatus').className='tip';try{const res=await fetch('/api/posters',{method:'POST',body:new FormData(e.target)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('createStatus').textContent='生成成功';$('createStatus').className='tip good'}catch(err){$('createStatus').textContent=err.message;$('createStatus').className='tip bad'}finally{$('generate').disabled=false}});
+$('editForm').addEventListener('submit',async e=>{e.preventDefault();if(!current)return;$('saveEdit').disabled=true;$('editStatus').textContent='正在重新排版…';try{const payload={title:$('editTitle').value,price:$('editPrice').value};payload.original_price=$('editOriginal').value || null;const res=await fetch('/api/posters/'+current.poster_id+'/revisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('editStatus').textContent='新版本已保存；未调用图像模型';$('editStatus').className='tip good'}catch(err){$('editStatus').textContent=err.message;$('editStatus').className='tip bad'}finally{$('saveEdit').disabled=false}});
+</script>
+</body></html>
