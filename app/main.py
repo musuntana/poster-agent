@@ -1,0 +1,121 @@
+"""M1 REST API + 极简页面。仅适合本地或可信环境使用。"""
+from __future__ import annotations
+import io
+import logging
+from pathlib import Path
+from typing import Annotated
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pydantic import ValidationError
+from . import storage
+from .compositor import compose, local_background
+from .image_provider import generate_ai_background, ImageProviderError
+from .schemas import PosterSpec, PosterEdit
+
+load_dotenv()
+logger = logging.getLogger(__name__)
+app = FastAPI(title="Poster Agent M1", version="0.1.0")
+MAX_UPLOAD = 10 * 1024 * 1024
+Image.MAX_IMAGE_PIXELS = 25_000_000
+
+
+async def read_upload(upload: UploadFile, *, required: bool = True) -> Image.Image:
+    blob = await upload.read(MAX_UPLOAD + 1)
+    if not blob:
+        raise HTTPException(status_code=422, detail="图片为空")
+    if len(blob) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="图片超过 10 MB 限制")
+    try:
+        with Image.open(io.BytesIO(blob)) as image:
+            if image.format not in {"PNG", "JPEG", "WEBP"}:
+                raise ValueError("格式不支持")
+            image.load()
+            image = ImageOps.exif_transpose(image)
+            if image.width < 64 or image.height < 64:
+                raise ValueError("图片太小")
+            return image.convert("RGBA")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=422, detail="请上传有效的 PNG/JPG/WEBP 图片（尺寸至少 64×64）") from exc
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    return (Path(__file__).resolve().parent / "templates" / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/health")
+async def health():
+    return {"ok": True, "version": "0.1.0"}
+
+
+@app.post("/api/posters", status_code=201)
+async def create_poster(
+    product: Annotated[UploadFile, File(description="SKU 商品图片")],
+    title: Annotated[str, Form()],
+    price: Annotated[str, Form()],
+    style: Annotated[str, Form()] = "蓝色科技风",
+    subtitle: Annotated[str, Form()] = "品质生活 · 限时优惠",
+    original_price: Annotated[str, Form()] = "",
+    cta: Annotated[str, Form()] = "立即抢购",
+    background_mode: Annotated[str, Form()] = "local",
+    logo: UploadFile | None = File(default=None),
+):
+    try:
+        spec = PosterSpec(title=title, price=price, subtitle=subtitle, style=style,
+                          original_price=original_price.strip() or None, cta=cta,
+                          background_mode=background_mode)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
+    sku = await read_upload(product)
+    brand_logo = await read_upload(logo) if logo is not None and logo.filename else None
+    try:
+        if spec.background_mode == "ai":
+            background = await generate_ai_background(spec.style)
+        else:
+            background = local_background(spec.style)
+        rendered = compose(spec, sku, brand_logo, background)
+        return storage.create(spec, sku, brand_logo, background, rendered)
+    except ImageProviderError as exc:
+        logger.warning("Qwen background generation failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.exception("poster creation failure")
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/posters/{poster_id}")
+async def get_poster(poster_id: str):
+    try:
+        return storage.view(poster_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/posters/{poster_id}/revisions", status_code=201)
+async def revise_poster(poster_id: str, edit: PosterEdit):
+    try:
+        current = storage.view(poster_id)
+        existing = PosterSpec.model_validate(current["spec"])
+        changes = edit.model_dump(exclude_unset=True)
+        if not changes:
+            raise HTTPException(status_code=422, detail="至少修改一个字段")
+        spec = PosterSpec.model_validate({**existing.model_dump(), **changes})
+        product, logo, background = storage.read_assets(poster_id)
+        rendered = compose(spec, product, logo, background)
+        return storage.new_version(poster_id, spec, rendered)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/posters/{poster_id}/versions/{version}/image")
+async def poster_image(poster_id: str, version: int):
+    try:
+        return FileResponse(storage.version_path(poster_id, version), media_type="image/png")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
