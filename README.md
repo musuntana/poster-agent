@@ -1,11 +1,11 @@
-# Poster Agent · M1 稳定基础 + M2a Brief 编译预览
+# Poster Agent · M1 生图基础 + M2a 结构化编译 + M2b 持久化人工审核
 
 M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
 
 > 当前是单机学习版：没有用户登录、鉴权、请求队列和并发写入事务机制；请只在 `127.0.0.1` 访问，**不要直接部署公网**。本地渐变背景不是 AI 生图。真实 Qwen API 需要你自己的 Key，并会产生计费。
 
 
-## 新增：M2a Brief 编译器（此功能分支）
+## 已实现：M2a Brief 编译器
 
 在原有 Web 表单上方输入自然语言 Brief，选择：
 
@@ -15,6 +15,19 @@ M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 
 点击“编译为海报规格”，会将草稿填入原 M1 的表单，**用户核对后才点击“生成海报”**。价格只采纳 Brief 中带明确标签的数值，不允许模型凭空生成价格。
 
 这个版本的 LangGraph 只有编译与审核状态两个节点，尚未实现 Checkpointer、自动修复或持久化中断恢复；详情参见 `docs/m2a-brief-to-spec.md`。
+
+## 新增：M2b 可恢复人工审核
+
+现在 Brief 编译流程使用带 SQLite Checkpointer 的 LangGraph 状态机保存审核任务：
+
+1. 输入 Brief，点击“编译为海报规格”，生成持久化运行 ID；
+2. 修改、补充字段并点击“确认规格”，LangGraph 从 `interrupt` 恢复；
+3. 再上传商品图片并点击“生成海报”，后端将检查当前规格与已批准内容是否相同；
+4. 刷新页面可凭本地保存的 ID 重新读取待审核草稿，也可以从 `GET /api/briefs/runs/{id}` 查看。
+
+`data/checkpoints.sqlite3` 是本地状态数据库，不上传 GitHub。不要把这一版部署到公网：仍没有用户鉴权、跨进程锁、后台队列和生产级并发控制。
+
+详细步骤见 `docs/m2b-checkpoint.md`。
 
 ## 0. 环境
 
@@ -132,6 +145,6 @@ data/examples/       本地生成的教学样例（运行脚本生成）
 
 ## 后续路线
 
-M2a：Brief Compiler + LangGraph 状态传递（当前）；M2b：Checkpoint / 人工确认恢复 / Planner / Repair；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
+M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：持久化任务治理和异常重试；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
 
 参见 `docs/learning-checklist.md`。
