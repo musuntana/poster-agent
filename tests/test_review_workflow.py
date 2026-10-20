@@ -89,3 +89,26 @@ def test_confirmed_spec_must_respect_business_price_constraints(tmp_path, monkey
                            json={"approved": True, "spec": invalid})
     assert response.status_code == 422
     assert client.get(f"/api/briefs/runs/{created['run_id']}").json()["pending_approval"]
+
+
+def test_review_gate_blocks_unapproved_or_modified_generation(tmp_path, monkeypatch, product_bytes):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    created = create(tmp_path, monkeypatch)
+    run_id = created["run_id"]
+    url = "/api/posters"
+    files = {"product": ("product.png", product_bytes, "image/png")}
+    data = {
+        "title": SPEC["title"], "subtitle": SPEC["subtitle"], "price": SPEC["price"],
+        "original_price": SPEC["original_price"], "style": SPEC["style"],
+        "cta": SPEC["cta"], "background_mode": "local", "review_run_id": run_id,
+    }
+    pending = client.post(url, files=files, data=data)
+    assert pending.status_code == 409  # before any paid model operation
+    approval = client.post(f"/api/briefs/runs/{run_id}/decision",
+                           json={"approved": True, "spec": SPEC})
+    assert approval.status_code == 200
+    changed = client.post(url, files=files, data={**data, "price": "188"})
+    assert changed.status_code == 409  # confirmed spec cannot be silently modified
+    generated = client.post(url, files=files, data=data)
+    assert generated.status_code == 201, generated.text
+    assert generated.json()["spec"]["price"] == "199"
