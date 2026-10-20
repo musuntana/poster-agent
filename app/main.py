@@ -13,12 +13,15 @@ from . import storage
 from .compositor import compose, local_background
 from .image_provider import generate_ai_background, ImageProviderError
 from .schemas import PosterSpec, PosterEdit
+from .review_routes import router as review_router
+from .review_service import ReviewNotFound, get_run
 from .brief_routes import router as brief_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Poster Agent M2a", version="0.2.0")
+app = FastAPI(title="Poster Agent M2b", version="0.2.1")
 app.include_router(brief_router)
+app.include_router(review_router)
 MAX_UPLOAD = 10 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
@@ -63,6 +66,7 @@ async def create_poster(
     cta: Annotated[str, Form()] = "立即抢购",
     background_mode: Annotated[str, Form()] = "local",
     logo: UploadFile | None = File(default=None),
+    review_run_id: Annotated[str, Form()] = "",
 ):
     try:
         spec = PosterSpec(title=title, price=price, subtitle=subtitle, style=style,
@@ -70,6 +74,18 @@ async def create_poster(
                           background_mode=background_mode)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
+    # M2b: creating an image from an approved Brief must use exactly the
+    # confirmed structured specification. Existing manually-filled M1 requests
+    # without review_run_id remain supported.
+    if review_run_id:
+        try:
+            review = get_run(review_run_id)
+        except ReviewNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if review["status"] != "APPROVED":
+            raise HTTPException(status_code=409, detail="请先完成并确认海报规格，再生成海报")
+        if review["confirmed_spec"] != spec.model_dump(mode="json"):
+            raise HTTPException(status_code=409, detail="当前字段与已确认的规格不一致，请重新编译并确认")
     sku = await read_upload(product)
     brand_logo = await read_upload(logo) if logo is not None and logo.filename else None
     try:

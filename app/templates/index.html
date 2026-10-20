@@ -2,22 +2,28 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M2a</title>
+<title>Poster Agent · M2b</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Poster Agent · M2a</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<header><h1>Poster Agent · M2b</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
 <main class="shell">
 <section class="panel">
-<h2>00 · 自然语言 Brief（M2a）</h2>
+<h2>00 · 自然语言 Brief（可恢复审核）</h2>
 <div class="row"><label>输入运营需求（如：主标题：双十一限时优惠，活动价199元，原价399元，风格：蓝色科技风）</label><textarea id="briefText" rows="3" placeholder="主标题：电动牙刷双十一，活动价199元，原价399元，风格：蓝色科技风"></textarea></div>
 <div class="row"><label>规格编译模式</label><select id="briefCompiler"><option value="demo">本地规则演示（不是 AI，免费）</option><option value="qwen">Qwen LLM 结构化抽取（需要 API Key）</option></select></div>
-<div class="actions"><button class="secondary" id="compileBrief" type="button">编译为海报规格</button><span id="compileStatus" class="tip">生成前请人工核对标题和价格</span></div>
+<div class="actions"><button class="secondary" id="compileBrief" type="button">编译并保存审核任务</button><span id="compileStatus" class="tip">创建后需明确批准，才能继续生图</span></div>
+<div class="actions" style="margin-top:10px">
+  <button id="approveBrief" class="hidden" type="button">确认规格</button>
+  <button id="rejectBrief" class="secondary hidden" type="button">拒绝草稿</button>
+  <button id="clearBrief" class="secondary hidden" type="button">清除任务 / 手动填写</button>
+</div>
+<p id="runInfo" class="tip"></p>
 <p id="compileWarnings" class="tip"></p>
 <section class="mt"><h2>01 · 新建海报（先确认字段）</h2></section>
-<form id="createForm">
+<form id="createForm"><input type="hidden" name="review_run_id" value="">
 <div class="row"><label>商品图片（推荐透明 PNG）*</label><input type="file" name="product" accept="image/png,image/jpeg,image/webp" required></div>
 <div class="row"><label>品牌 Logo（可选）</label><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></div>
 <div class="row"><label>主标题*</label><input name="title" required maxlength="35" value="双十一限时优惠"></div>
@@ -48,44 +54,112 @@
 </main>
 <script>
 let current = null;
+let activeReviewRunId = null;
+let activeReviewApproved = false;
 const $ = id => document.getElementById(id);
+const form = $('createForm');
+const field = name => form.elements.namedItem(name);
+const reviewFields = ['title','subtitle','price','original_price','style','cta','background_mode'];
+function applyFields(fields) {
+  for(const name of reviewFields) {
+    if(Object.hasOwn(fields,name) && field(name)) field(name).value = fields[name] ?? '';
+  }
+  if(!field('style').value) field('style').value = '蓝色科技风';
+  if(!field('cta').value) field('cta').value = '立即抢购';
+  if(!field('subtitle').value) field('subtitle').value = '品质生活 · 限时优惠';
+}
+function showRun(run, restore=false) {
+  activeReviewRunId = run.run_id;
+  activeReviewApproved = run.status==='APPROVED';
+  field('review_run_id').value = run.run_id;
+  localStorage.setItem('poster-review-run', run.run_id);
+  applyFields(activeReviewApproved ? run.confirmed_spec : run.draft.fields);
+  $('approveBrief').classList.toggle('hidden', !run.pending_approval);
+  $('rejectBrief').classList.toggle('hidden', !run.pending_approval);
+  $('clearBrief').classList.remove('hidden');
+  $('runInfo').textContent = '持久化审核 ID：'+run.run_id+' | 状态：'+run.status;
+  $('compileWarnings').textContent = '待补充：'+(run.draft.missing_fields.join('、')||'无')+'。'+run.draft.warnings.join('；');
+  $('compileStatus').textContent = activeReviewApproved ? '审核已通过，可以生成海报'
+    : run.status==='REJECTED' ? '草稿已拒绝，请创建新任务'
+    : run.status==='WAITING_INPUT' ? '缺少字段，补充后点击「确认规格」'
+    : restore ? '已恢复上次审核任务，请核对后确认' : '草稿已保存，请核对后确认';
+  $('compileStatus').className = activeReviewApproved ? 'tip good' : 'tip';
+}
+function resetReview() {
+  activeReviewRunId=null;
+  activeReviewApproved=false;
+  field('review_run_id').value='';
+  localStorage.removeItem('poster-review-run');
+  for(const id of ['approveBrief','rejectBrief','clearBrief']) $(id).classList.add('hidden');
+  $('compileStatus').textContent='已切换手动填写模式';
+  $('compileWarnings').textContent='';
+  $('runInfo').textContent='';
+}
+$('clearBrief').addEventListener('click', resetReview);
 $('compileBrief').addEventListener('click', async () => {
   const brief = $('briefText').value.trim();
-  if(brief.length < 8) { $('compileStatus').textContent = 'Brief 至少输入 8 个字符'; return; }
-  $('compileBrief').disabled = true;
-  $('compileStatus').textContent = '正在编译规格…';
-  $('compileWarnings').textContent = '';
+  if(brief.length < 8) { $('compileStatus').textContent='Brief 至少输入 8 个字符'; return; }
+  $('compileBrief').disabled=true;
+  $('compileStatus').textContent='正在编译并保存检查点…';
   try {
-    const response = await fetch('/api/briefs/compile', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({brief, compiler:$('briefCompiler').value})
+    const response = await fetch('/api/briefs/runs',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({brief,compiler:$('briefCompiler').value})
     });
-    const json = await response.json();
-    if(!response.ok) throw Error(errorText(json));
-    const draft = json.draft;
-    const form = $('createForm');
-    for(const name of ['title','subtitle','price','original_price','style','cta']) {
-      const field = form.elements.namedItem(name);
-      if(field) field.value = draft.fields[name] ?? '';
-    }
-    // 不把缺失的风格和 CTA 伪装成模型提取结果：保留用户可修改的显式默认值。
-    if(!form.elements.namedItem('style').value) form.elements.namedItem('style').value = '蓝色科技风';
-    if(!form.elements.namedItem('cta').value) form.elements.namedItem('cta').value = '立即抢购';
-    $('compileStatus').textContent = json.status==='WAITING_INPUT'
-      ? '缺少必填字段，请补充后再生成' : '编译完成，请确认信息后再生成';
-    $('compileStatus').className = json.status==='WAITING_INPUT' ? 'tip bad' : 'tip good';
-    $('compileWarnings').textContent = '待补充：'+(draft.missing_fields.join('、')||'无')
-      +'。注意：'+draft.warnings.join('；');
+    const json=await response.json();
+    if(!response.ok)throw Error(errorText(json));
+    showRun(json);
   } catch(err) {
     $('compileStatus').textContent=err.message;
     $('compileStatus').className='tip bad';
-  } finally {
-    $('compileBrief').disabled=false;
-  }
+  } finally { $('compileBrief').disabled=false; }
 });
+function currentSpec() {
+  const original=field('original_price').value.trim();
+  return {
+    title:field('title').value,subtitle:field('subtitle').value,
+    price:field('price').value,original_price:original||null,
+    style:field('style').value,cta:field('cta').value,
+    background_mode:field('background_mode').value
+  };
+}
+async function decide(approved){
+  if(!activeReviewRunId)return;
+  $('approveBrief').disabled=true;$('rejectBrief').disabled=true;
+  try {
+    const response=await fetch('/api/briefs/runs/'+activeReviewRunId+'/decision',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(approved ? {approved:true,spec:currentSpec()} : {approved:false})
+    });
+    const json=await response.json();
+    if(!response.ok)throw Error(errorText(json));
+    showRun(json);
+    $('compileStatus').className=approved?'tip good':'tip';
+  } catch(err) {
+    $('compileStatus').textContent=err.message;
+    $('compileStatus').className='tip bad';
+  } finally {$('approveBrief').disabled=false;$('rejectBrief').disabled=false;}
+}
+$('approveBrief').addEventListener('click',()=>decide(true));
+$('rejectBrief').addEventListener('click',()=>decide(false));
+(async () => {
+  const last=localStorage.getItem('poster-review-run');
+  if(!last)return;
+  try {
+    const response=await fetch('/api/briefs/runs/'+last);
+    if(!response.ok){resetReview();return;}
+    showRun(await response.json(),true);
+  } catch(e){$('compileStatus').textContent='恢复审核任务失败，可刷新重试';}
+})();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
 function display(data){current=data; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
-$('createForm').addEventListener('submit',async e=>{e.preventDefault();$('generate').disabled=true;$('createStatus').textContent='正在生成，AI 模式可能耗时较久…';$('createStatus').className='tip';try{const res=await fetch('/api/posters',{method:'POST',body:new FormData(e.target)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('createStatus').textContent='生成成功';$('createStatus').className='tip good'}catch(err){$('createStatus').textContent=err.message;$('createStatus').className='tip bad'}finally{$('generate').disabled=false}});
+$('createForm').addEventListener('submit',async e=>{e.preventDefault();
+  if(activeReviewRunId && !activeReviewApproved){
+    $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
+    $('createStatus').className='tip bad';
+    return;
+  }
+  $('generate').disabled=true;$('createStatus').textContent='正在生成，AI 模式可能耗时较久…';$('createStatus').className='tip';try{const res=await fetch('/api/posters',{method:'POST',body:new FormData(e.target)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('createStatus').textContent='生成成功';$('createStatus').className='tip good'}catch(err){$('createStatus').textContent=err.message;$('createStatus').className='tip bad'}finally{$('generate').disabled=false}});
 $('editForm').addEventListener('submit',async e=>{e.preventDefault();if(!current)return;$('saveEdit').disabled=true;$('editStatus').textContent='正在重新排版…';try{const payload={title:$('editTitle').value,price:$('editPrice').value};payload.original_price=$('editOriginal').value || null;const res=await fetch('/api/posters/'+current.poster_id+'/revisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('editStatus').textContent='新版本已保存；未调用图像模型';$('editStatus').className='tip good'}catch(err){$('editStatus').textContent=err.message;$('editStatus').className='tip bad'}finally{$('saveEdit').disabled=false}});
 </script>
 </body></html>
