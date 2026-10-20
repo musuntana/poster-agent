@@ -13,10 +13,12 @@ from . import storage
 from .compositor import compose, local_background
 from .image_provider import generate_ai_background, ImageProviderError
 from .schemas import PosterSpec, PosterEdit
+from .brief_routes import router as brief_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Poster Agent M1", version="0.1.0")
+app = FastAPI(title="Poster Agent M2a", version="0.2.0")
+app.include_router(brief_router)
 MAX_UPLOAD = 10 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
