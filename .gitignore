@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .DS_Store
 data/posters/
+
+# Local checkpoint state
+data/*.sqlite3
+data/*.sqlite3-*
