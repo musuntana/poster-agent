@@ -1,8 +1,20 @@
-# Poster Agent · M1（可运行的海报生成器）
+# Poster Agent · M1 稳定基础 + M2a Brief 编译预览
 
 M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
 
 > 当前是单机学习版：没有用户登录、鉴权、请求队列和并发写入事务机制；请只在 `127.0.0.1` 访问，**不要直接部署公网**。本地渐变背景不是 AI 生图。真实 Qwen API 需要你自己的 Key，并会产生计费。
+
+
+## 新增：M2a Brief 编译器（此功能分支）
+
+在原有 Web 表单上方输入自然语言 Brief，选择：
+
+- **本地规则演示**：不用 API Key；仅识别带明确标签的字段，不是 LLM。
+- **真实 Qwen 结构化编译**：需要在 `.env` 中设置 `QWEN_CHAT_ENDPOINT` 和 `DASHSCOPE_API_KEY`，会产生模型费用。
+
+点击“编译为海报规格”，会将草稿填入原 M1 的表单，**用户核对后才点击“生成海报”**。价格只采纳 Brief 中带明确标签的数值，不允许模型凭空生成价格。
+
+这个版本的 LangGraph 只有编译与审核状态两个节点，尚未实现 Checkpointer、自动修复或持久化中断恢复；详情参见 `docs/m2a-brief-to-spec.md`。
 
 ## 0. 环境
 
@@ -120,6 +132,6 @@ data/examples/       本地生成的教学样例（运行脚本生成）
 
 ## 后续路线
 
-M2：自然语言 → Spec Compiler → LangGraph Planner/State/Repair；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
+M2a：Brief Compiler + LangGraph 状态传递（当前）；M2b：Checkpoint / 人工确认恢复 / Planner / Repair；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
 
 参见 `docs/learning-checklist.md`。
