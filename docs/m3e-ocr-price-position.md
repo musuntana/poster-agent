@@ -36,9 +36,9 @@ These coordinates apply **only to the current hard-coded Pillow template**. For 
 cd ~/repos/poster-agent
 git status
 git pull --ff-only origin main
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-python -m pytest -q tests/test_ocr_price_layout.py tests/test_acceptance.py
+uv python install 3.12
+uv sync --locked
+uv run --locked python -m pytest -q tests/test_ocr_price_layout.py tests/test_acceptance.py
 ```
 
 Scenarios include:
@@ -57,7 +57,7 @@ All tests use **mock OCR rows**. They prove evaluator logic, not PaddleOCR model
 Once PaddleOCR is installed and `scripts.ocr_probe --infer` returns OK on a real exported poster:
 
 ```bash
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+uv run --locked python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000, create a poster, run the Acceptance Gate in PaddleOCR mode, and inspect both `ocr_price` and `ocr_price_position` in the report. If OCR returns missing or malformed bounding boxes, the spatial check should be UNVERIFIED. That is a limitation to investigate, not an invitation to fabricate boxes.
