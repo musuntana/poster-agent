@@ -92,7 +92,7 @@ The real evaluator rejects missing/stale OCR reports and compares picture hashes
 
 ## CI scope
 
-GitHub Actions runs only the diagnosis and mock-based unit tests. It does NOT install PaddlePaddle weights or execute the real model. Green CI is NOT proof that Mac M1 real inference succeeded.
+The default lightweight CI does NOT install model weights or execute PaddleOCR. The separate manual-only `Real PaddleOCR CPU` GitHub Actions workflow **did successfully run genuine inference on Linux x86_64** (run #39586650764, 7 OCR lines and 7 bounding boxes on one program-rendered test image; model PaddleOCR 3.3.0). This is **not** a Mac M1 inference result or a real-business accuracy metric. See [M3g](m3g-real-ocr-actions.md).
 
 ## Next milestone
 
