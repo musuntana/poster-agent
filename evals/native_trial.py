@@ -7,7 +7,11 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
+from datetime import datetime, timezone
+from tempfile import TemporaryDirectory
+from uuid import uuid4
 from collections import Counter
 from pathlib import Path
 
@@ -22,6 +26,8 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
     if not re.fullmatch(REVIEWER_PATTERN, reviewer):
         raise ValueError("审核员代号只能使用 2–40 位字母、数字、下划线和短横线")
     rows: list[dict] = []
+    recorded = set()
+    unrecorded = set()
     with storage.LOCK:
         for poster in sorted(storage.root().glob("*")):
             if not poster.is_dir() or not VALID_ID.fullmatch(poster.name):
@@ -97,6 +103,13 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
                                     else:
                                         row["status"] = "READY"
                                         row["action"] = "可以参与原生 4:5 离线评测"
+                                        identifier = (poster.name, version)
+                                        if report.get("ocr_runtime_evidence") == "RECORDED" and isinstance(
+                                            report.get("ocr_runtime"), dict
+                                        ):
+                                            recorded.add(identifier)
+                                        else:
+                                            unrecorded.add(identifier)
                 except (reviews.NativeReviewConflict, FileNotFoundError, OSError, ValueError, KeyError, TypeError) as exc:
                     # This path is a diagnostic, not evidence of valid inputs.
                     row["status"] = (
@@ -125,12 +138,16 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
         "minimum_distinct_products": 20,
         "meets_suggested_minimum": len(all_products) >= 20,
         "scorable_text_labels": with_text,
+        "ocr_adapter_runtime_recorded_versions": len(recorded),
+        "ocr_adapter_runtime_unrecorded_versions": len(unrecorded),
+        "ocr_runtime_attested": False,
         "status_counts": dict(sorted(counts.items())),
         "can_score": bool(can_score),
         "warning": (
             "Readiness only; product digests approximate distinct source images, "
-            "not independent product categories. Mocked OCR can produce OK reports "
-            "in tests; no proof of live model or professional review accuracy."
+            "not independent product categories. Runtime metadata is diagnostic only, "
+            "not cryptographically attested; mocked OCR may produce OK reports. "
+            "No independent proof of model inference or review accuracy."
         ),
     }
     return summary, rows
@@ -154,9 +171,35 @@ def save_trial_audit(output_dir: Path, summary: dict, rows: list[dict]) -> None:
         writer.writerows(rows)
 
 
+SCORE_FILES = ("native_real_summary.json", "native_real_cases.csv", "native_trial_labels.csv")
+
+
+def _archive_previous_scores(output_dir: Path) -> str | None:
+    """Preserve scored artifacts from an earlier run, never present as latest."""
+    existing = [output_dir / name for name in SCORE_FILES
+                if (output_dir / name).is_file()]
+    if not existing:
+        return None
+    name = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + uuid4().hex[:12]
+    directory = output_dir / "history" / name
+    directory.mkdir(parents=True, exist_ok=False)
+    for path in existing:
+        os.replace(path, directory / path.name)
+    return f"history/{name}"
+
+
 def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
-    """Audit by default. --score exclusively reuses the existing M5d scorer."""
+    """Readiness is default; --score stages results and exposes them only on success.
+
+    Earlier results move to a versioned history folder, never silently remain
+    at the root after a newer audit discovers missing or stale evidence.
+    """
     summary, rows = audit_trial(reviewer)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary["trial_run_id"] = uuid4().hex
+    summary["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat()
+    summary["previous_score_archive"] = _archive_previous_scores(output_dir)
+    summary["latest_score_status"] = "AUDIT_ONLY" if not score else "BLOCKED"
     save_trial_audit(output_dir, summary, rows)
     if not score:
         return summary
@@ -166,22 +209,30 @@ def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
             "已输出 native_trial_manifest.csv，请先处理缺口"
         )
 
-    # Export labels through the existing M5c contract, never construct new
-    # ground truth from a PosterSpec or from OCR prediction.
-    import tempfile
+    # Strictly reuse the existing M5c exporter and M5d evaluator. The temporary
+    # score directory prevents partly written artifacts from appearing current.
     from evals.native_real_reports import evaluate_native_reports
 
-    csv_content, _meta = reviews.export(reviewer)
-    with tempfile.TemporaryDirectory(prefix="native-trial-labels-") as tmp:
-        labels_path = Path(tmp) / "labels.csv"
-        labels_path.write_text(csv_content, encoding="utf-8")
-        result = evaluate_native_reports(labels_path, output_dir)
+    try:
+        csv_content, _meta = reviews.export(reviewer)
+        with TemporaryDirectory(prefix=".score-staging-", dir=output_dir) as tmp:
+            staged = Path(tmp)
+            labels_path = staged / "native_trial_labels.csv"
+            labels_path.write_text(csv_content, encoding="utf-8")
+            result = evaluate_native_reports(labels_path, staged)
+            result["trial_readiness_file"] = "native_trial_readiness.json"
+            result["ready_distinct_product_sha256_count"] = summary[
+                "ready_distinct_product_sha256_count"
+            ]
+            for name in SCORE_FILES:
+                os.replace(staged / name, output_dir / name)
+    except Exception:
+        for name in SCORE_FILES:
+            (output_dir / name).unlink(missing_ok=True)
+        summary["latest_score_status"] = "FAILED"
+        save_trial_audit(output_dir, summary, rows)
+        raise
 
-    # Do not mix this content digest of transient UTF-8 CSV with the BOM-prefixed
-    # download digest shown by a browser; the scored bytes are specified above.
-    # Persist exact bytes the M5d scorer hashed: a replay must not depend
-    # on exporting mutable "latest" reviews at a later date.
-    (output_dir / "native_trial_labels.csv").write_text(csv_content, encoding="utf-8")
-    result["trial_readiness_file"] = "native_trial_readiness.json"
-    result["ready_distinct_product_sha256_count"] = summary["ready_distinct_product_sha256_count"]
+    summary["latest_score_status"] = "SCORED"
+    save_trial_audit(output_dir, summary, rows)
     return result
