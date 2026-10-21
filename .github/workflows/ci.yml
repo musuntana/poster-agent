@@ -28,8 +28,10 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Validate Python syntax
-        run: python -m compileall -q app tests scripts
+        run: python -m compileall -q app tests scripts evals
       - name: Run pytest (no external model calls)
         run: python -m pytest -q
+      - name: Replay synthetic OCR benchmark (no OCR model)
+        run: python -m scripts.evaluate_acceptance --output-dir /tmp/poster-agent-benchmark
       - name: Generate deterministic demo
         run: python -m scripts.generate_demo
