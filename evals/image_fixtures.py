@@ -49,6 +49,12 @@ class ImageManifest(BaseModel):
                 raise ValueError("Label outside target fields")
             if Path(case.image_file).name != case.image_file:
                 raise ValueError("Image paths must be basenames")
+            derived_labels = [
+                field for field in self.target_fields
+                if getattr(case.rendered_spec, field) != getattr(self.expected_spec, field)
+            ]
+            if derived_labels != case.truth_defects:
+                raise ValueError("programmatic ground truth does not match rendered spec")
         return self
 
 
