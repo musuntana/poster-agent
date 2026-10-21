@@ -69,6 +69,6 @@ python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
 - `app/acceptance.py`、`app/ocr_provider.py`、`app/ocr_price_layout.py`、`app/ocr_overlay.py`：质量检查、OCR、可视化；
 - `app/human_annotations.py`、`evals/`：人工标签与评测。
 
-**下一优先级：** 用真实商品图片收集不少于 20 张独立人工审核的海报并执行 OCR，核算误报/漏检；之后再决定 VLM 评审和局部修复；多尺寸、鉴权、多租户与异步任务仍是未来里程碑。
+**下一优先级：** 用真实商品图片收集不少于 20 张独立人工审核的海报并执行 OCR，核算误报/漏检；之后再决定 VLM 评审和局部修复；原生响应式多尺寸排版、鉴权、多租户与异步任务仍是未来里程碑。
 
 更多细节见 [当前文档索引](docs/README.md)，早期记录见 [历史归档](docs/archive/README.md)。
