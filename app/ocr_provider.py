@@ -6,7 +6,28 @@ does not download large OCR weights.
 from __future__ import annotations
 
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from platform import machine, python_version
+
+
+
+class OCRLines(list):
+    """Compatibility-preserving list of observations with adapter telemetry.
+
+    This is diagnostic metadata, NOT cryptographic model-execution attestation.
+    """
+
+    def __init__(self, lines: list[dict], runtime: dict):
+        super().__init__(lines)
+        self.runtime = runtime
+
+
+def _package_version(name: str) -> str | None:
+    try:
+        return version(name)
+    except PackageNotFoundError:
+        return None
 
 
 class OCRUnavailable(RuntimeError):
@@ -68,7 +89,15 @@ def recognize(image_path: Path) -> list[dict]:
                     "score": float(scores[i]) if i < len(scores) else None,
                     "bbox": bbox,
                 })
-        return lines
+        return OCRLines(lines, {
+            "source": "paddleocr_adapter",
+            "paddleocr_package_version": _package_version("paddleocr"),
+            "paddlepaddle_package_version": _package_version("paddlepaddle"),
+            "python_version": python_version(),
+            "machine": machine(),
+            "line_count": len(lines),
+            "attested": False,
+        })
     except (OCRUnavailable, OCRExecutionError):
         raise
     except Exception as exc:
