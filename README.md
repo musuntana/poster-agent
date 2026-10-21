@@ -28,7 +28,7 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 | 模块 | 当前能力 | 可信边界 |
 | --- | --- | --- |
-| M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 本地演示完整；用户自己的 Qwen API 需本地验证/计费 |
+| M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 上传文件限 10 MiB、解码前限制 1600 万像素/单边 8192；仅本地 Demo |
 | M2 Brief 与人工审核 | 规则/Qwen 结构化需求、LangGraph SQLite Checkpoint、规格人工确认 | 本地单进程工作流，没有登录和生产并发隔离 |
 | M2 执行可靠性 | SQLite 幂等键、事件日志、已完成复用、结果未知保护 | 不等于跨系统 Exactly-Once；不传幂等键的旧接口仍可重复 |
 | M3 Acceptance Gate | 文案/OCR、品牌词表、价格区域位置与冲突检查、报告 SHA-256、可视化诊断 PNG | OCR 缺失与不确定必须标 `UNVERIFIED`，不可冒充 PASS |

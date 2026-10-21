@@ -7,6 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
+import warnings
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header
 from fastapi.responses import FileResponse, HTMLResponse
@@ -41,7 +42,13 @@ app.include_router(human_review_router)
 app.include_router(channel_export_router)
 app.include_router(native_acceptance_router)
 MAX_UPLOAD = 10 * 1024 * 1024
-Image.MAX_IMAGE_PIXELS = 25_000_000
+# These limits apply to the *decoded* image, not the compressed upload size.
+# Enforce them BEFORE image.load() to prevent high-memory decompression.
+MAX_DECODED_PIXELS = 16_000_000
+MAX_IMAGE_EDGE = 8_192
+# Pillow also raises for very large dimensions, including formats where its
+# safety check occurs during Image.open().
+Image.MAX_IMAGE_PIXELS = MAX_DECODED_PIXELS
 
 
 async def read_upload(upload: UploadFile, *, required: bool = True) -> Image.Image:
@@ -51,15 +58,29 @@ async def read_upload(upload: UploadFile, *, required: bool = True) -> Image.Ima
     if len(blob) > MAX_UPLOAD:
         raise HTTPException(status_code=413, detail="图片超过 10 MB 限制")
     try:
-        with Image.open(io.BytesIO(blob)) as image:
-            if image.format not in {"PNG", "JPEG", "WEBP"}:
-                raise ValueError("格式不支持")
-            image.load()
-            image = ImageOps.exif_transpose(image)
-            if image.width < 64 or image.height < 64:
-                raise ValueError("图片太小")
-            return image.convert("RGBA")
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        # Treat Pillow's decompression warnings as upload rejection, not a
+        # warning followed by allocating potentially huge raster buffers.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(blob)) as image:
+                if image.format not in {"PNG", "JPEG", "WEBP"}:
+                    raise ValueError("格式不支持")
+                width, height = image.size
+                if width > MAX_IMAGE_EDGE or height > MAX_IMAGE_EDGE or width * height > MAX_DECODED_PIXELS:
+                    raise HTTPException(status_code=413, detail="图片像素或边长超限（最多 1600 万像素，单边最多 8192）")
+                if width < 64 or height < 64:
+                    raise ValueError("图片太小")
+                image.load()
+                # Normalize orientation and pixel mode, then strip any
+                # EXIF/ICC/XMP/tEXt metadata before the image can be persisted.
+                normalized = ImageOps.exif_transpose(image).convert("RGBA")
+                normalized.info.clear()
+                return normalized
+    except HTTPException:
+        raise
+    except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
+        raise HTTPException(status_code=413, detail="图片解码像素超出安全限制") from exc
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="请上传有效的 PNG/JPG/WEBP 图片（尺寸至少 64×64）") from exc
 
 
