@@ -12,3 +12,6 @@ data/*.sqlite3-*
 data/eval_runs/
 data/*-labels.csv
 data/my-real-labels.csv
+
+# Native PaddleOCR validation environment
+.venv-ocr/
