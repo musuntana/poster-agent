@@ -1,18 +1,48 @@
 name: CI
 
+# Never run on each push, and never rerun automatically on PR synchronize.
+# Normal path: draft PR -> Ready for review => ONE quick validation.
+# Revalidate after further changes: remove/reapply "ci:run" label, or dispatch
+# from Actions -> CI -> Run workflow, selecting the target branch.
 on:
-  push:
-    branches: [main, feature/m2-brief-to-spec]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "quick = syntax + pytest; full = benchmarks, rendered images and artifact"
+        type: choice
+        required: true
+        default: quick
+        options:
+          - quick
+          - full
   pull_request:
+    types: [ready_for_review, labeled]
     branches: [main]
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "scripts/**"
+      - "evals/**"
+      - "requirements*.txt"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/real-ocr.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-tests:
+    # Other label changes do not allocate a runner. Only ci:run asks for tests.
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.action == 'ready_for_review' ||
+          (github.event.action == 'labeled' && github.event.label.name == 'ci:run') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 12
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -31,17 +61,24 @@ jobs:
         run: python -m compileall -q app tests scripts evals
       - name: Run pytest (no external model calls)
         run: python -m pytest -q
+
+      # Heavy verification is EXPLICIT only: never run on PR or each push.
       - name: Replay synthetic OCR benchmark (no OCR model)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.level == 'full' }}
         run: python -m scripts.evaluate_acceptance --output-dir /tmp/poster-agent-benchmark
       - name: OCR environment diagnostic (NO model inference)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.level == 'full' }}
         run: python -m scripts.ocr_probe --output /tmp/ocr_runtime_diagnosis.json
       - name: Render 20 PNG fixtures and assert no-OCR abstention
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.level == 'full' }}
         run: python -m scripts.run_image_benchmark --ocr none
       - name: Upload code-rendered PNG fixtures and offline benchmark
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.level == 'full' }}
         uses: actions/upload-artifact@v4
         with:
           name: m3b-rendered-png-fixtures
           path: data/eval_runs/m3b_images/
-          retention-days: 14
+          retention-days: 3
       - name: Generate deterministic demo
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.level == 'full' }}
         run: python -m scripts.generate_demo
