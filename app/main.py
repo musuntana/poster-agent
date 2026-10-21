@@ -4,6 +4,7 @@ import io
 import json
 import hashlib
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 from dotenv import load_dotenv
@@ -21,7 +22,14 @@ from .brief_routes import router as brief_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Poster Agent M2c", version="0.2.2")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Single-process only: orphaned RUNNING tasks may already have incurred costs.
+    execution_store.recover_incomplete()
+    yield
+
+
+app = FastAPI(title="Poster Agent M2c", version="0.2.2", lifespan=lifespan)
 app.include_router(brief_router)
 app.include_router(review_router)
 MAX_UPLOAD = 10 * 1024 * 1024
