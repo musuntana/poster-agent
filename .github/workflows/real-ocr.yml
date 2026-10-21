@@ -8,6 +8,11 @@ on:
         type: boolean
         required: false
         default: false
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/real-ocr.yml"
   push:
     branches:
       - feature/m3g-real-paddleocr-ci
