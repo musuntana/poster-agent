@@ -121,3 +121,10 @@ def test_reports_are_version_specific_and_invalid_inputs_rejected(tmp_path, monk
     assert client.post(_url(poster_id), json={"ocr_mode": "fake"}).status_code == 422
     assert client.post(_url("not-a-valid-id"), json={"ocr_mode": "none"}).status_code == 404
     assert client.get(_url(poster_id, version=555)).status_code == 404
+
+
+def test_ocr_price_cannot_match_longer_price():
+    from app.acceptance import _has_text
+    assert not _has_text(["活动价¥1990"], "¥199")
+    assert _has_text(["活动价¥199"], "¥199")
+    assert _has_text(["活动价￥199"], "¥199")
