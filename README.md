@@ -1,161 +1,12 @@
-# Poster Agent · M1/M2 产品闭环 + M3a/M3b 质量评测 + M3c 人工标注
+# Poster Agent · 电商营销海报生成与验收
 
-M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
+本项目面向电商运营，将 **Brief → 人工确认 → 商品图海报生成 → 多版本修改 → OCR/规则验收 → 人工标注和可复现评测** 串成一个单机可运行的工作流。
 
-> 当前是单机学习版：没有用户登录、鉴权、请求队列和并发写入事务机制；请只在 `127.0.0.1` 访问，**不要直接部署公网**。本地渐变背景不是 AI 生图。真实 Qwen API 需要你自己的 Key，并会产生计费。
+> **适用范围：本地研究与产品 Demo。** 尚无登录、权限隔离、可靠任务队列、真实商品保真度验证和生产级事务；仅绑定 `127.0.0.1`，不要直接公网部署。真实 Qwen 图片 API 可能产生费用，本地渐变背景不是 AI 生图。
 
+## 快速启动
 
-## 已实现：M2a Brief 编译器
-
-在原有 Web 表单上方输入自然语言 Brief，选择：
-
-- **本地规则演示**：不用 API Key；仅识别带明确标签的字段，不是 LLM。
-- **真实 Qwen 结构化编译**：需要在 `.env` 中设置 `QWEN_CHAT_ENDPOINT` 和 `DASHSCOPE_API_KEY`，会产生模型费用。
-
-点击“编译为海报规格”，会将草稿填入原 M1 的表单，**用户核对后才点击“生成海报”**。价格只采纳 Brief 中带明确标签的数值，不允许模型凭空生成价格。
-
-这个版本的 LangGraph 只有编译与审核状态两个节点，尚未实现 Checkpointer、自动修复或持久化中断恢复；详情参见 `docs/m2a-brief-to-spec.md`。
-
-## 新增：M2b 可恢复人工审核
-
-现在 Brief 编译流程使用带 SQLite Checkpointer 的 LangGraph 状态机保存审核任务：
-
-1. 输入 Brief，点击“编译为海报规格”，生成持久化运行 ID；
-2. 修改、补充字段并点击“确认规格”，LangGraph 从 `interrupt` 恢复；
-3. 再上传商品图片并点击“生成海报”，后端将检查当前规格与已批准内容是否相同；
-4. 刷新页面可凭本地保存的 ID 重新读取待审核草稿，也可以从 `GET /api/briefs/runs/{id}` 查看。
-
-`data/checkpoints.sqlite3` 是本地状态数据库，不上传 GitHub。不要把这一版部署到公网：仍没有用户鉴权、跨进程锁、后台队列和生产级并发控制。
-
-详细步骤见 `docs/m2b-checkpoint.md`。
-
-## 新增：M2c 重复生成保护与执行记录
-
-浏览器现在为每次海报生成提交 `Idempotency-Key`，服务端使用 SQLite 保存请求状态。
-
-- 相同 Key + 相同素材与字段：若已完成，则复用相同结果。
-- 相同 Key + 不同素材/字段：HTTP 409，拒绝覆盖。
-- 正在执行或结果未知：HTTP 409，不自动再次调用收费生图模型。
-- 重启后将上次进程遗留的 RUNNING 任务标记为 UNKNOWN，供人工排查。
-- `GET /api/executions/{key}` 查询结构化事件记录。
-- Qwen Brief 提取只对明确 HTTP 429 限流响应进行一次额外尝试。
-
-**这仍是单机版本，不是生产级 exactly-once 或多租户系统。** 详细见 `docs/m2c-reliability.md`。
-
-## M3a 新增：Acceptance Gate
-
-现在可以对**每个海报版本**单独运行并保存质量验收报告：
-
-- 使用规则检查验证输出尺寸、PosterSpec 源价格、上传 Logo 资产是否存在，以及自定义品牌违禁词；
-- 使用**可选 PaddleOCR 3.x** 对实际导出 PNG 进行文字识别并核对标题、价格、CTA；
-- 严格标识 `PASS`、`FAIL`、`UNVERIFIED`，未运行 OCR 时不会虚构文字校验通过；
-- 保存包含图片 / 规格 SHA-256、字段状态及证据的 JSON 报告；
-- 自动验收无论结果如何，**仍需人工审核**；没有自动发布或自动修复。
-
-默认依赖不包含 PaddleOCR 大模型。Mac M1 上是否能运行 Paddle 推理依赖取决于安装环境，请按官方平台说明选择 CPU 运行时。详见 `docs/m3a-acceptance.md`。
-
-## M3b 新增：可复现 OCR 误判评测
-
-20 条人工设计的**合成样本**用于回归测试价格误匹配、OCR 漏字、误报、漏检、低置信度及未验证状态。可生成 Precision/Recall/F1/覆盖率和逐案例 CSV：
-
-```bash
-python -m scripts.evaluate_acceptance
-```
-
-另新增 `python -m scripts.evaluate_real_reports --annotations 你的人工标注.csv` 工具，可按图片与报告 SHA-256 匹配**真实**导出海报的人工标签。没有真实标注的情况下，不会产生所谓真实准确率。
-
-详见 `docs/m3b-evaluation.md`。本阶段也修复了 `¥199.90` 被误判为期望 `¥199` 的缺陷。
-
-## M3b 扩展：实际渲染 PNG 回放（含可选本机 OCR）
-
-从手写的 OCR 文本测试升级：**确实通过 Pillow 生成 20 张 1024×1024 PNG 像素图片**，程序性设置正确/错误的价格、标题和按钮，生成 SHA-256 和独立的回放报告。
-
-```bash
-python -m scripts.run_image_benchmark --ocr none
-# 在兼容 PaddleOCR 3.x 的本机环境中：
-python -m scripts.run_image_benchmark --ocr paddle
-```
-
-未安装或未运行 OCR 时不能产生“真实模型准确率”，只报告 UNVERIFIED。程序渲染图片不等于真实电商商品图，也不代表人工标注业务准确率。详见 `docs/m3b-image-replay.md`。
-
-## M3c 新增：网页人工审核与真实标签导出
-
-不再要求先手写 CSV：生成海报后，在网页的 **05 · 人工标注** 中对照 PNG 检查标题、活动价、CTA 等字段，选择“正确 / 错误 / 无法判断”，保存当前版本的人工审核结果并导出指定审核员的 CSV。
-
-- 每条标注绑定图片和规格 SHA-256，修改海报后不会把旧标签误用到新版本；
-- 更正是追加不可变记录，导出取**该审核员最新的明确意见**；
-- “无法判断”不计作正确，会从 CSV 排除并记录排除数量；
-- 导出的 CSV 直接兼容现有的 real_reports 评测程序；
-- 刷新浏览器后自动尝试恢复最近一张海报，方便继续审核。
-
-**实际 PaddleOCR 推理仍需要在兼容环境中完成。人工标签只能表示你的判断，不自动证明模型正确。**
-
-详见 docs/m3c-human-review.md。本机仍无鉴权与多租户隔离，请勿部署公网。
-
-## M3d：原生 Mac M1 PaddleOCR 实测与证据
-
-当前代码已新增用于区分“依赖安装”和“真正成功推理”的本机诊断工具。优先使用 ARM64 + Python 3.12 的独立虚拟环境，Mac M1 可以安装 PaddlePaddle 3.2.0 CPU 轮子，但**尚未在你的机器上确认成功**。
-
-```bash
-# 不运行模型，只查看安装状态
-python -m scripts.ocr_probe
-
-# 真正运行 OCR，保存图片 SHA、识别数量、耗时与推理状态
-python -m scripts.generate_demo
-python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
-
-# 单图成功后，再让 PaddleOCR 实测 20 张程序渲染 PNG
-python -m scripts.run_image_benchmark --ocr paddle
-```
-
-真实 OCR 批量结果单独存放在 `data/eval_runs/m3b_images_paddle/`，并保存每张图片的 OCR 识别行与耗时。离线 `--ocr none` 不会冒充实测。
-
-安装说明、测试边界及后续使用人工标签计算真实指标的方法详见 [docs/m3d-ocr-runtime.md](docs/m3d-ocr-runtime.md)。CI 不下载或加载真实 PaddleOCR 模型。
-
-## M3e：OCR 价格区域与冲突金额核验
-
-新增模板坐标感知的 `ocr_price_position` / `ocr_original_price_position` 验收规则：活动价正确数字如果只出现在原价区域，也不能判为合格。同一区域出现两个冲突金额会被阻断；OCR 没有坐标或有效置信度则显示 `UNVERIFIED`，不会伪报通过。
-
-本功能只适用于当前 1024×1024 Pillow 固定版式，**不代表真实 PaddleOCR 已在你的 Mac 上完成推理**，也不改变 M3b 原有仅基于 OCR 文本的评测指标。详见 [M3e 规则说明](docs/m3e-ocr-price-position.md)。
-
-## M3f：OCR 识别框可视化与报告证据核对
-
-Acceptance Gate 运行后可在网页直接查看/导出**诊断 PNG**：叠加固定 1024×1024 模板的活动价、原价区域及已保存的 OCR 坐标框，用颜色区分 PASS/FAIL/UNVERIFIED，辅助人工判断误报与漏检原因。
-
-- 读取已有报告，**不重新执行 OCR**，不会覆盖原始海报。
-- 严格核对报告与当前图片、规格的 SHA-256；报告缺失或过期会拒绝出图。
-- OCR 未运行或没有有效坐标时，不伪造识别框；沿用报告前 35 行识别证据上限。
-- 该功能是单机版的可视化诊断，不是自动修复，更不是已完成真实 PaddleOCR 的证据。
-
-详见 [docs/m3f-ocr-visual-diagnostics.md](docs/m3f-ocr-visual-diagnostics.md)。
-
-## M3g：在 GitHub Linux CPU 上执行真正的 PaddleOCR
-
-之前 GitHub CI 中的 OCR 数据都是模拟的，因此还不能证明真实模型运行。现在新增**独立的 GitHub Actions 工作流**，可以手动启动真实 PaddlePaddle/PaddleOCR CPU 推理：
-
-- 下载真实模型，在程序生成的 PNG 上运行单图 OCR；
-- 保存运行时依赖版本、耗时、识别行、文字框和原始图像 SHA-256；
-- 独立校验证据，缺少真实推理结果或坐标框时失败；
-- 可选择扩展为 20 张程序渲染图片的真实 OCR 回放；
-- 不使用业务照片、不触发收费 Qwen API，不与快速单元测试混为一谈。
-
-**Linux CI 实测不等于你的 Mac M1 已实测。** 首次运行以真实 Actions 状态为准，不能凭代码提交声称推理成功。
-
-操作：[docs/m3g-real-ocr-actions.md](docs/m3g-real-ocr-actions.md)。
-
-## GitHub Actions：节省额度的触发策略
-
-**不会再因每次 push 自动跑 CI。** 普通测试只在有代码变更的 Draft PR 进入 Ready for review 时自动跑一次；需要补测时可添加 `ci:run` 标签或在 Actions 页面手动执行。默认快速检查只运行语法检查和 pytest；额外的 20 张图片回放/构建产物需要手动选 `full`。**真实 PaddleOCR CPU 模型下载与推理只手动触发**，绝不会跟随 push、PR 自动执行。
-
-完整使用方法见 [docs/ci-budget.md](docs/ci-budget.md)。合并前仍需要对最终代码做必要验证；如果启用了分支保护 Required checks，请核对新触发策略是否与规则冲突。
-
-## 0. 环境
-
-- Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。
-- 支持中文的系统字体（Mac 建议 PingFang；Linux 建议 Noto Sans CJK）。
-- 推荐上传透明 PNG 商品图（否则系统会保留白底并放进商品卡片，不会虚构自动抠图）。
-
-## 1. 安装
+要求 Python 3.11–3.13（推荐 3.12）、可用中文字体；Mac 可使用 PingFang，Linux 可使用 Noto Sans CJK。
 
 ```bash
 git clone git@github.com:musuntana/poster-agent.git
@@ -164,107 +15,57 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 cp .env.example .env
-```
-
-如出现“找不到中文字体”，编辑 `.env` 中的 `POSTER_FONT_PATH`：
-
-```bash
-# Apple macOS 典型位置，先检查：ls /System/Library/Fonts/PingFang.ttc
-POSTER_FONT_PATH=/System/Library/Fonts/PingFang.ttc
-```
-
-## 2. 先生成纯本地样例（不需要 API Key）
-
-```bash
 python -m scripts.generate_demo
-```
-
-会生成：
-
-- `data/examples/sample_product.png`
-- `data/examples/sample_logo.png`
-- `data/examples/sample_preview.png`
-
-打开样例 `open data/examples/sample_preview.png`（macOS）。
-
-## 3. 启动 Web 服务
-
-```bash
+python -m pytest -q
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-浏览器打开 **http://127.0.0.1:8000**。使用 sample_product.png 和 sample_logo.png 试用“本地渐变模式”。
+打开 <http://127.0.0.1:8000>；API 文档在 <http://127.0.0.1:8000/docs>。首次示例会在 `data/examples/` 生成测试素材及预览图。若中文缺字，在 `.env` 中设置本机存在的 `POSTER_FONT_PATH`。
 
-API 文档：http://127.0.0.1:8000/docs
+## 已实现能力（以当前 main 为准）
 
-## 4. 启用真实 Qwen-Image 背景（可选）
+| 模块 | 当前能力 | 可信边界 |
+| --- | --- | --- |
+| M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 本地演示完整；用户自己的 Qwen API 需本地验证/计费 |
+| M2 Brief 与人工审核 | 规则/Qwen 结构化需求、LangGraph SQLite Checkpoint、规格人工确认 | 本地单进程工作流，没有登录和生产并发隔离 |
+| M2 执行可靠性 | SQLite 幂等键、事件日志、已完成复用、结果未知保护 | 不等于跨系统 Exactly-Once；不传幂等键的旧接口仍可重复 |
+| M3 Acceptance Gate | 文案/OCR、品牌词表、价格区域位置与冲突检查、报告 SHA-256、可视化诊断 PNG | OCR 缺失与不确定必须标 `UNVERIFIED`，不可冒充 PASS |
+| M3 评测 | 合成 OCR 样本、20 张程序渲染 PNG、FP/FN/F1、逐版人工标注及 CSV | 合成数据不是真实业务精度；人工标签尚无独立审计 |
+| 真实 OCR 证据 | 独立 GitHub Linux CPU PaddleOCR 3.3.0 成功识别一张程序海报（7 行/7 坐标框） | [Actions 证据](https://github.com/musuntana/poster-agent/actions/runs/39586650764)；Mac M1 和真实客户图片尚未实测 |
 
-在阿里云百炼控制台获取 API Key 和对应区域的 **Workspace ID**，然后在本地 `.env` 中配置：
+所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或多尺寸派生。
 
-```ini
-DASHSCOPE_API_KEY=你的Key
-QWEN_IMAGE_ENDPOINT=https://你的WorkspaceId.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/images/generations
-QWEN_IMAGE_MODEL=qwen-image-3.0
-```
+## 常用操作
 
-如果工作空间在新加坡，将域名换成 `你的WorkspaceId.ap-southeast-1.maas.aliyuncs.com`。**Key、模型服务地域必须匹配**。不要把 `.env` 提交到 GitHub。
+**无需云端 Key：** 网页选择本地背景，生成、修改并导出；`python -m scripts.generate_demo` 可检查本地字体与渲染。
 
-然后重新启动服务，在页面中切换 **真实 Qwen-Image 模式**。
+**可选 Qwen 真实背景：** 在 `.env` 设置 `DASHSCOPE_API_KEY`、对应区域/Workspace 的 `QWEN_IMAGE_ENDPOINT`，以及 `QWEN_IMAGE_MODEL`。确保 Key、服务地域和模型互相匹配；勿将 `.env` 提交。详细变量模板见 [`.env.example`](.env.example)。Qwen 结构化 Brief 可按模板配置 `QWEN_CHAT_ENDPOINT`。
 
-接口来源：<https://help.aliyun.com/en/model-studio/qwen-image-generation-and-editing-api-reference>（OpenAI 兼容 `/images/generations`，返回 `data[0].url`，图片 URL 约 24 小时有效；本项目会立即保存背景至本地）。
-
-本项目真实 API 调用尚未使用你的 Key 进行实际联网测试；请以你本地调用结果为准。
-
-## 5. 修改海报并下载
-
-生成一张海报后，在右侧“修改内容”区域将价格从 199 修改成 189 并保存：
-
-- 创建新版本 v2；
-- 背景不会重新调用 Qwen API；
-- 原图/Logo/背景保留不变；
-- `data/posters/<id>/versions/` 保存不同版本的 PNG 与 JSON。
-
-可手动测试接口：
+**OCR 环境诊断及真实单图推理（可选）：**
 
 ```bash
-curl http://127.0.0.1:8000/health
+python -m scripts.ocr_probe
+python -m scripts.generate_demo
+python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
 ```
 
-## 6. 运行测试
+`--infer` 需要安装真实的 PaddlePaddle / PaddleOCR，默认开发依赖并不包含大型模型；安装建议参见 [本地 OCR 运行手册](docs/m3d-ocr-runtime.md)。Linux CI 的成功记录**不能当成 Mac 本机成功记录**。
 
-```bash
-python -m pytest -q
-```
+**质量评测：** `python -m scripts.evaluate_acceptance` 重放合成文本测试；`python -m scripts.run_image_benchmark --ocr none` 生成 20 张 PNG 并标注 OCR 未运行；`--ocr paddle` 才调用真实本地 OCR。对实际海报请在网页中先人工审核并导出 CSV，再运行 `python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle`（要求已有与图片哈希一致的真实 OCR 报告）。
 
-应检查：数据校验、Pillow 合成、创建任务、改价格产生 v2、历史版本存在、非法文件被拒绝、AI Key 缺失时返回错误而不是偷偷用本地背景。
+## GitHub Actions 额度策略
 
-## 7. 项目结构
+**不因每次 push 自动触发 CI。** Draft PR → Ready for review 时运行一次快速测试；修改后需要再次验证，则手动运行 CI quick 或给 PR 添加 `ci:run` 标签。完整离线评测选择手动 `full`；昂贵的 `Real PaddleOCR CPU` 仅手动执行。详细流程见 [docs/ci-budget.md](docs/ci-budget.md)。分支维护采用合并 PR 且 HEAD 精确匹配的保护策略，避免误删未完成工作。
 
-```text
-app/
-  main.py            FastAPI API / 网页入口
-  schemas.py         Pydantic 规格及修订模型
-  image_provider.py  真实 Qwen-Image API 背景生成
-  compositor.py      Pillow 商品/Logo/文案图层合成
-  storage.py         单机本地版本管理
-  templates/index.html  最简 Web 页面
-scripts/generate_demo.py  本地样例素材和预览图
-tests/               自动化测试
-data/examples/       本地生成的教学样例（运行脚本生成）
-```
+## 代码入口与下一阶段
 
-## M1 的明确限制
+- `app/main.py` / `app/templates/index.html`：FastAPI 与前端；
+- `app/compositor.py`、`app/storage.py`：确定性布局、版本素材；
+- `app/review_service.py`、`app/workflows/review_graph.py`：规格确认与恢复；
+- `app/execution_store.py`：执行账本与幂等；
+- `app/acceptance.py`、`app/ocr_provider.py`、`app/ocr_price_layout.py`、`app/ocr_overlay.py`：质量检查、OCR、可视化；
+- `app/human_annotations.py`、`evals/`：人工标签与评测。
 
-- 只有 1024×1024 正方形布局；没有多尺寸派生。
-- 上传文件最大 10MB，仅允许 PNG/JPEG/WEBP；没有用户认证及安全审计。
-- 中文字体必须在运行环境可用；Windows 需自己配置路径。
-- 浏览器的图片生成请求目前同步等待；后续 M2/M5 改为异步任务和状态轮询。
-- 版本保留在本机目录，不适合多台 Worker 并发写入。
-- 标题过长时会报错要求缩短，而不是被裁剪。
-- 暂不包含抠图/可视化拖拽/复杂品牌规则；不应称为企业级生产系统。
+**下一优先级：** 用真实商品图片收集不少于 20 张独立人工审核的海报并执行 OCR，核算误报/漏检；之后再决定 VLM 评审和局部修复；多尺寸、鉴权、多租户与异步任务仍是未来里程碑。
 
-## 后续路线
-
-M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：执行账本、收费生成防重复保护与限流重试（已提交）；M3a：Acceptance Gate（已实现基础版）；M3b：OCR 数据集和误判评估；M3c：VLM 与修复策略；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
-
-参见 `docs/learning-checklist.md`。
+更多细节见 [当前文档索引](docs/README.md)，早期记录见 [历史归档](docs/archive/README.md)。
