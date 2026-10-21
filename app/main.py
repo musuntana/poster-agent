@@ -1,15 +1,17 @@
 """M1 REST API + 极简页面。仅适合本地或可信环境使用。"""
 from __future__ import annotations
 import io
+import json
+import hashlib
 import logging
 from pathlib import Path
 from typing import Annotated
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header
 from fastapi.responses import FileResponse, HTMLResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
-from . import storage
+from . import storage, execution_store
 from .compositor import compose, local_background
 from .image_provider import generate_ai_background, ImageProviderError
 from .schemas import PosterSpec, PosterEdit
@@ -19,7 +21,7 @@ from .brief_routes import router as brief_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-app = FastAPI(title="Poster Agent M2b", version="0.2.1")
+app = FastAPI(title="Poster Agent M2c", version="0.2.2")
 app.include_router(brief_router)
 app.include_router(review_router)
 MAX_UPLOAD = 10 * 1024 * 1024
@@ -52,7 +54,30 @@ async def home():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": "0.1.0"}
+    return {"ok": True, "version": "0.2.2"}
+
+
+def _fingerprint(spec: PosterSpec, product: Image.Image, logo: Image.Image | None) -> str:
+    """Hash normalized input pixels and fields, not arbitrary file paths."""
+    digest = hashlib.sha256()
+    digest.update(json.dumps(spec.model_dump(mode="json"), sort_keys=True).encode("utf-8"))
+    for asset in (product, logo):
+        if asset is None:
+            digest.update(b"none")
+        else:
+            digest.update(f"{asset.mode}:{asset.width}x{asset.height}".encode())
+            digest.update(asset.tobytes())
+    return digest.hexdigest()
+
+
+@app.get("/api/executions/{key}")
+def get_execution(key: str):
+    try:
+        return execution_store.get(key)
+    except execution_store.InvalidExecutionKey as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.post("/api/posters", status_code=201)
@@ -67,6 +92,7 @@ async def create_poster(
     background_mode: Annotated[str, Form()] = "local",
     logo: UploadFile | None = File(default=None),
     review_run_id: Annotated[str, Form()] = "",
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     try:
         spec = PosterSpec(title=title, price=price, subtitle=subtitle, style=style,
@@ -88,19 +114,37 @@ async def create_poster(
             raise HTTPException(status_code=409, detail="当前字段与已确认的规格不一致，请重新编译并确认")
     sku = await read_upload(product)
     brand_logo = await read_upload(logo) if logo is not None and logo.filename else None
+    # Claim BEFORE calling a paid model. Requests without this header still use
+    # the M1 legacy behavior (for compatibility), and are not idempotent.
+    if idempotency_key is not None:
+        try:
+            previous = execution_store.begin(idempotency_key, _fingerprint(spec, sku, brand_logo))
+            if previous is not None:
+                return previous
+        except execution_store.InvalidExecutionKey as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except execution_store.ExecutionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     try:
         if spec.background_mode == "ai":
             background = await generate_ai_background(spec.style)
         else:
             background = local_background(spec.style)
         rendered = compose(spec, sku, brand_logo, background)
-        return storage.create(spec, sku, brand_logo, background, rendered)
+        result = storage.create(spec, sku, brand_logo, background, rendered)
+        if idempotency_key is not None:
+            execution_store.finish(idempotency_key, result)
+        return result
     except ImageProviderError as exc:
+        if idempotency_key is not None:
+            execution_store.mark_unknown(idempotency_key)
         logger.warning("Qwen background generation failed: %s", exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except (OSError, RuntimeError, ValueError) as exc:
+    except Exception:
+        if idempotency_key is not None:
+            execution_store.mark_unknown(idempotency_key)
         logger.exception("poster creation failure")
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=500, detail="海报生成异常，可能存在未知结果，请查询执行记录") from None
 
 
 @app.get("/api/posters/{poster_id}")
