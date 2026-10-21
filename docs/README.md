@@ -15,6 +15,7 @@
 | GitHub 真正 OCR 推理 | [m3g-real-ocr-actions.md](m3g-real-ocr-actions.md) | Linux CPU 手动模型验证及实验产物 |
 | 多渠道安全派生 | [m4a-channel-exports.md](m4a-channel-exports.md) | 4:5、9:16、16:9 PNG，无裁内容；非响应式重新排版 |
 | 4:5 原生排版 | [m4b-native-feed.md](m4b-native-feed.md) | 1080×1350 分别布局 SKU/文案/价格/CTA；无收费模型调用 |
+| 4:5 原生图独立验收 | [m4c-native-acceptance.md](m4c-native-acceptance.md) | 专用 OCR/价格坐标、源资产与导出哈希绑定，不自动放行 |
 
 ## 证据边界
 

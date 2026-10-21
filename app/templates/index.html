@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M4b</title>
+<title>Poster Agent · M4c</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Poster Agent · M4b</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<header><h1>Poster Agent · M4c</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
 <main class="shell">
 <section class="panel">
 <h2>00 · 自然语言 Brief（可恢复审核）</h2>
@@ -64,7 +64,14 @@
 <img id="channelPreview" class="preview" alt="渠道海报预览" loading="lazy" style="max-height:650px">
 <p id="channelStatus" class="tip">请先生成海报，再选择尺寸。</p>
 <div class="actions"><a id="channelDownload" href="#" download="poster-channel.png">导出该尺寸 PNG</a></div>
-<p class="tip">原生 4:5 使用独立文字、SKU 与价格布局；其它规格延用原图完整安全缩放。导出前请人工检查字号、对比度和渠道规范。方形版 OCR 验收结果不适用于任一派生图。</p>
+<p class="tip">原生 4:5 使用独立文字、SKU 与价格布局；其它规格延用原图完整安全缩放。方形版 OCR 验收结果不适用于任一派生图。</p>
+<div class="row"><label>原生 4:5 单独验收</label><select id="nativeOcrMode">
+<option value="none">规则检查（不调用 OCR）</option>
+<option value="paddle">真实 PaddleOCR（本地需安装）</option>
+</select></div>
+<div class="actions"><button id="checkNative" class="secondary" type="button" disabled>检查当前 4:5 导出</button><span id="nativeGateStatus" class="tip">选择原生 4:5 并生成海报后可检查。</span></div>
+<pre id="nativeGateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;max-height:240px;overflow:auto">未检查该导出版本</pre>
+<p class="tip">此报告只适用于 1080×1350 原生版，不会继承方形版的质量结论。即使文字 OCR PASS，商品保真、品牌与投放规范也必须人工检查。</p>
 </section>
 <section class="mt">
 <h2>05 · Acceptance Gate（自动验收）</h2>
@@ -231,8 +238,40 @@ function updateChannelExport(){
   $('channelStatus').textContent=preset==='feed_4x5_native'
     ? '原生 4:5：分别重新排版商品、标题、价格和 CTA（不调用 AI）'
     : '安全缩放：方形原图完整保留，背景延展，不重新排版文字';
+  $('checkNative').disabled=preset!=='feed_4x5_native';
+  $('nativeGateStatus').textContent='尚未检查当前 v'+current.version+' 的原生 4:5 导出';
+  $('nativeGateResult').textContent='未检查该导出版本';
 }
 $('channelPreset').addEventListener('change',updateChannelExport);
+$('checkNative').addEventListener('click', async () => {
+  if(!current || $('channelPreset').value!=='feed_4x5_native') return;
+  const id=current.poster_id, version=current.version;
+  $('checkNative').disabled=true;
+  $('nativeGateStatus').textContent='正在核对原生导出（真实 OCR 可能需要加载模型）…';
+  try {
+    const res=await fetch('/api/posters/'+id+'/versions/'+version+'/exports/feed_4x5_native/acceptance',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ocr_mode:$('nativeOcrMode').value})
+    });
+    const report=await res.json();
+    if(!res.ok) throw Error(errorText(report));
+    if(!current || current.poster_id!==id || current.version!==version ||
+       $('channelPreset').value!=='feed_4x5_native') return;
+    $('nativeGateStatus').textContent='原生 4:5：'+report.auto_checks+' · OCR：'+report.ocr_status+' · '+report.verdict;
+    $('nativeGateStatus').className='tip '+(report.auto_checks==='FAIL'?'bad':'');
+    $('nativeGateResult').textContent=report.checks.map(c=>
+      c.status+' | '+c.name+'：'+c.detail).join('\n')+
+      '\n\n图片 SHA-256：'+report.native_image_sha256+
+      '\n独立报告：未继承方形版验收结果；仍需人工确认。';
+  }catch(e){
+    $('nativeGateStatus').textContent='验收失败：'+e.message;
+    $('nativeGateStatus').className='tip bad';
+  }finally{
+    if(current?.poster_id===id && current?.version===version &&
+       $('channelPreset').value==='feed_4x5_native') $('checkNative').disabled=false;
+  }
+});
+
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
