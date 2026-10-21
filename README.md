@@ -38,6 +38,8 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M4b 已新增原生 4:5 布局：** 1080×1350，基于已保存的商品素材、Logo、背景和选定版本规格单独重排，不再次调用收费模型。旧三种比例安全缩放依然可选；尚无针对原生 4:5 的独立 OCR/人工验收基准。详见 [M4b 开发说明](docs/m4b-native-feed.md)。
 
+**M4c 已新增独立 4:5 验收：** 可选对原生 1080×1350 PNG 执行真实 PaddleOCR，核查价格位置、标题和 CTA，并将报告绑定到当前 SKU、背景、Spec 与导出 PNG 的 SHA-256；默认无 OCR 时明确未验证，不继承方形版验收结果。详见 [M4c 说明](docs/m4c-native-acceptance.md)。
+
 所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
 
 ## 常用操作
