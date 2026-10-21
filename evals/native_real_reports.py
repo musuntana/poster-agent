@@ -144,6 +144,11 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
     for row in rows:
         grouped[row["field"]].append(row["outcome"])
 
+    runtime_recorded = sum(
+        report.get("ocr_runtime_evidence") == "RECORDED"
+        and isinstance(report.get("ocr_runtime"), dict)
+        for report, _checks in report_cache.values()
+    )
     all_metrics = metrics([row["outcome"] for row in rows])
     output = {
         "schema_version": "1.0",
@@ -151,11 +156,16 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
         "variant_id": VARIANT,
         "ocr_mode": "paddle",
         "ocr_engine_execution": "saved_report_only",
+        "ocr_runtime_recorded_versions": runtime_recorded,
+        "ocr_runtime_unrecorded_versions": len(report_cache) - runtime_recorded,
+        "ocr_runtime_attested": False,
         "warning": (
             "User-provided human judgments are not independently audited. "
             "These are per-field OCR-detection metrics on assessed labels; "
             "visual-only fields are NOT model predictions. "
-            "Do not treat simulated OCR reports as real inference evidence."
+            "PaddleOCR runtime metadata is informational and not independently "
+            "attested. Do not treat simulated or unrecorded OCR as verified "
+            "real inference evidence."
         ),
         "label_csv_sha256": hashlib.sha256(annotations.read_bytes()).hexdigest(),
         "reviewer": records[0]["reviewer"],
