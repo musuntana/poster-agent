@@ -1,0 +1,37 @@
+name: One-time merged branch cleanup
+
+# Runs exactly once when this maintenance PR is merged, never on pushes.
+# The guard is tied to the known maintenance branch name.
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - ".github/workflows/branch-prune-once.yml"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: >-
+      ${{ github.event.pull_request.merged == true &&
+          github.event.pull_request.head.ref == 'chore/repo-hygiene-20261021' &&
+          github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit and remove exact-HEAD, merged, allowlisted branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALLOW_BRANCH_PRUNE: "1"
+        run: python -m scripts.prune_merged_branches --apply
+      - name: Store audit result (3 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-branch-cleanup-report
+          path: data/eval_runs/branch-prune.json
+          if-no-files-found: warn
+          retention-days: 3
