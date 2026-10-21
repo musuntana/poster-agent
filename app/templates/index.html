@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M2c</title>
+<title>Poster Agent · M3a</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Poster Agent · M2c</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<header><h1>Poster Agent · M3a</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
 <main class="shell">
 <section class="panel">
 <h2>00 · 自然语言 Brief（可恢复审核）</h2>
@@ -51,6 +51,17 @@
 <div class="actions"><button id="saveEdit" type="submit">保存新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
 </form>
 <div class="tip" id="editStatus"></div><div class="tip" id="history"></div>
+<section class="mt">
+<h2>04 · Acceptance Gate（自动验收）</h2>
+<p class="tip">检测每个海报版本。规则检查与真实 OCR 分开执行；未运行 OCR 不会视为通过。</p>
+<div class="row"><label>验收模式</label><select id="ocrMode">
+<option value="none">规则检查（不运行 OCR）</option>
+<option value="paddle">PaddleOCR 3.x 真实文字识别（需本机单独安装）</option>
+</select></div>
+<div class="actions"><button class="secondary" type="button" id="runGate">检查当前版本</button>
+<span class="tip" id="gateStatus">尚未验收</span></div>
+<pre id="gateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;line-height:1.7;max-height:330px;overflow:auto">暂无报告</pre>
+</section>
 </section>
 </section>
 </main>
@@ -169,7 +180,7 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
@@ -204,5 +215,27 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   }
 });
 $('editForm').addEventListener('submit',async e=>{e.preventDefault();if(!current)return;$('saveEdit').disabled=true;$('editStatus').textContent='正在重新排版…';try{const payload={title:$('editTitle').value,price:$('editPrice').value};payload.original_price=$('editOriginal').value || null;const res=await fetch('/api/posters/'+current.poster_id+'/revisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('editStatus').textContent='新版本已保存；未调用图像模型';$('editStatus').className='tip good'}catch(err){$('editStatus').textContent=err.message;$('editStatus').className='tip bad'}finally{$('saveEdit').disabled=false}});
+$('runGate').addEventListener('click', async () => {
+  if(!current)return;
+  const posterId=current.poster_id, version=current.version;
+  $('runGate').disabled=true;
+  $('gateStatus').textContent='正在执行验收（PaddleOCR 首次加载可能较慢）…';
+  try {
+    const response=await fetch('/api/posters/'+posterId+'/versions/'+version+'/acceptance',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ocr_mode:$('ocrMode').value})
+    });
+    const report=await response.json();
+    if(!response.ok)throw Error(errorText(report));
+    if(!current || current.poster_id!==posterId || current.version!==version) return;
+    $('gateStatus').textContent='自动检查：'+report.auto_checks+' · 结论：'+report.verdict+' · OCR：'+report.ocr_status;
+    $('gateStatus').className='tip '+(report.auto_checks==='FAIL'?'bad':'');
+    const items=report.checks.map(c=>c.status+' | '+c.name+'：'+c.detail);
+    $('gateResult').textContent=items.join('\n')+'\n\n注：即使自动检查 PASS，仍需人工确认，不能直接投放。';
+  } catch(error) {
+    $('gateStatus').textContent='验收失败：'+error.message;
+    $('gateStatus').className='tip bad';
+  } finally {$('runGate').disabled=false;}
+});
 </script>
 </body></html>
