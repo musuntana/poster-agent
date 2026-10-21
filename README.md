@@ -1,4 +1,4 @@
-# Poster Agent · M1 生图基础 + M2a 编译 + M2b 审核恢复 + M2c 执行可靠性
+# Poster Agent · M1/M2 生成与可靠性 + M3a 自动质量验收
 
 M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
 
@@ -41,6 +41,18 @@ M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 
 - Qwen Brief 提取只对明确 HTTP 429 限流响应进行一次额外尝试。
 
 **这仍是单机版本，不是生产级 exactly-once 或多租户系统。** 详细见 `docs/m2c-reliability.md`。
+
+## M3a 新增：Acceptance Gate
+
+现在可以对**每个海报版本**单独运行并保存质量验收报告：
+
+- 使用规则检查验证输出尺寸、PosterSpec 源价格、上传 Logo 资产是否存在，以及自定义品牌违禁词；
+- 使用**可选 PaddleOCR 3.x** 对实际导出 PNG 进行文字识别并核对标题、价格、CTA；
+- 严格标识 `PASS`、`FAIL`、`UNVERIFIED`，未运行 OCR 时不会虚构文字校验通过；
+- 保存包含图片 / 规格 SHA-256、字段状态及证据的 JSON 报告；
+- 自动验收无论结果如何，**仍需人工审核**；没有自动发布或自动修复。
+
+默认依赖不包含 PaddleOCR 大模型。Mac M1 上是否能运行 Paddle 推理依赖取决于安装环境，请按官方平台说明选择 CPU 运行时。详见 `docs/m3a-acceptance.md`。
 
 ## 0. 环境
 
@@ -158,6 +170,6 @@ data/examples/       本地生成的教学样例（运行脚本生成）
 
 ## 后续路线
 
-M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：执行账本、收费生成防重复保护与限流重试（已提交）；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
+M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：执行账本、收费生成防重复保护与限流重试（已提交）；M3a：Acceptance Gate（已实现基础版）；M3b：OCR 数据集和误判评估；M3c：VLM 与修复策略；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
 
 参见 `docs/learning-checklist.md`。
