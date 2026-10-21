@@ -6,7 +6,6 @@ does NOT run OCR, generate images with AI, or fabricate an accuracy metric.
 from __future__ import annotations
 
 import csv
-import io
 import json
 import re
 from collections import Counter
@@ -17,11 +16,6 @@ from app import storage
 from app.human_annotations import REVIEWER_PATTERN, VALID_ID
 from app.native_acceptance import StaleNativeEvidence, verified_report
 from evals.native_real_reports import OCR_FIELDS, _text_prediction
-
-BLOCKED = {
-    "REVIEW_STALE", "SOURCE_INVALID", "OCR_MISSING", "OCR_STALE",
-    "OCR_NOT_OK", "OCR_CHECKS_INVALID",
-}
 
 
 def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
@@ -103,7 +97,7 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
                                     else:
                                         row["status"] = "READY"
                                         row["action"] = "可以参与原生 4:5 离线评测"
-                except (FileNotFoundError, OSError, ValueError, KeyError, TypeError) as exc:
+                except (reviews.NativeReviewConflict, FileNotFoundError, OSError, ValueError, KeyError, TypeError) as exc:
                     # This path is a diagnostic, not evidence of valid inputs.
                     row["status"] = (
                         "REVIEW_STALE" if isinstance(exc, reviews.NativeReviewConflict)
