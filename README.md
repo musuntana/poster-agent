@@ -66,6 +66,18 @@ python -m scripts.evaluate_acceptance
 
 详见 `docs/m3b-evaluation.md`。本阶段也修复了 `¥199.90` 被误判为期望 `¥199` 的缺陷。
 
+## M3b 扩展：实际渲染 PNG 回放（含可选本机 OCR）
+
+从手写的 OCR 文本测试升级：**确实通过 Pillow 生成 20 张 1024×1024 PNG 像素图片**，程序性设置正确/错误的价格、标题和按钮，生成 SHA-256 和独立的回放报告。
+
+```bash
+python -m scripts.run_image_benchmark --ocr none
+# 在兼容 PaddleOCR 3.x 的本机环境中：
+python -m scripts.run_image_benchmark --ocr paddle
+```
+
+未安装或未运行 OCR 时不能产生“真实模型准确率”，只报告 UNVERIFIED。程序渲染图片不等于真实电商商品图，也不代表人工标注业务准确率。详见 `docs/m3b-image-replay.md`。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。
