@@ -31,12 +31,14 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 | M2 执行可靠性 | SQLite 幂等键、事件日志、已完成复用、结果未知保护 | 不等于跨系统 Exactly-Once；不传幂等键的旧接口仍可重复 |
 | M3 Acceptance Gate | 文案/OCR、品牌词表、价格区域位置与冲突检查、报告 SHA-256、可视化诊断 PNG | OCR 缺失与不确定必须标 `UNVERIFIED`，不可冒充 PASS |
 | M3 评测 | 合成 OCR 样本、20 张程序渲染 PNG、FP/FN/F1、逐版人工标注及 CSV | 合成数据不是真实业务精度；人工标签尚无独立审计 |
-| M4a 渠道派生 | 4:5、9:16、16:9 无裁内容 PNG 安全缩放及网页版导出 | 不是响应式重排，派生图需人工检查尺寸与可读性 |
+| M4a/M4b 多尺寸派生 | 三种安全缩放尺寸；新增 4:5 原生 SKU/标题/价格/CTA 排版 | 原生布局目前仅 4:5；其它仍安全缩放，所有派生图需人工验收 |
 | 真实 OCR 证据 | 独立 GitHub Linux CPU PaddleOCR 3.3.0 成功识别一张程序海报（7 行/7 坐标框） | [Actions 证据](https://github.com/musuntana/poster-agent/actions/runs/39586650764)；Mac M1 和真实客户图片尚未实测 |
 
 **M4a 多尺寸安全派生已实现：** 从已保存的 1024×1024 PNG 离线导出 1080×1350（4:5）、1080×1920（9:16）、1200×675（16:9）。原海报整体等比例缩放、居中，空白部分模糊延展；不会重调 AI 或裁切中央内容。这**不是自适应重排**，新尺寸必须人工重新验收。详见 [M4a 说明](docs/m4a-channel-exports.md)。
 
-所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或原生多尺寸自适应排版。
+**M4b 已新增原生 4:5 布局：** 1080×1350，基于已保存的商品素材、Logo、背景和选定版本规格单独重排，不再次调用收费模型。旧三种比例安全缩放依然可选；尚无针对原生 4:5 的独立 OCR/人工验收基准。详见 [M4b 开发说明](docs/m4b-native-feed.md)。
+
+所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
 
 ## 常用操作
 
@@ -69,6 +71,6 @@ python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
 - `app/acceptance.py`、`app/ocr_provider.py`、`app/ocr_price_layout.py`、`app/ocr_overlay.py`：质量检查、OCR、可视化；
 - `app/human_annotations.py`、`evals/`：人工标签与评测。
 
-**下一优先级：** 用真实商品图片收集不少于 20 张独立人工审核的海报并执行 OCR，核算误报/漏检；之后再决定 VLM 评审和局部修复；原生响应式多尺寸排版、鉴权、多租户与异步任务仍是未来里程碑。
+**下一优先级：** 收集不少于 20 张真实商品海报、人工复核原生 4:5 与方形版本的文字/商品保真效果，并完成真实 OCR；随后再决定是否为 9:16 和 16:9 实现独立排版。VLM 自动修复、鉴权、多租户和异步队列仍属后续里程碑。
 
 更多细节见 [当前文档索引](docs/README.md)，早期记录见 [历史归档](docs/archive/README.md)。
