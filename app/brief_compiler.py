@@ -6,6 +6,7 @@ LLM 的候选值必须经过确定性来源校验，缺字段则要求用户手�
 from __future__ import annotations
 
 import json
+import asyncio
 import os
 import re
 from decimal import Decimal, InvalidOperation
@@ -123,6 +124,15 @@ async def _qwen_extract(brief: str) -> dict:
                 json=payload,
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             )
+            # Only explicit rate-limit responses are retried once; ambiguous
+            # timeouts/503s are NOT automatically retried to avoid duplicate charges.
+            if response.status_code == 429:
+                await asyncio.sleep(0.3)
+                response = await client.post(
+                    endpoint,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                )
             response.raise_for_status()
             message = response.json()["choices"][0]["message"]["content"]
         obj = json.loads(message)
