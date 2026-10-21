@@ -64,8 +64,11 @@ def _tokens(lines: list[dict]) -> tuple[list[dict], int]:
             parsed = _amount(match.group(1))
             score = line.get("score")
             center = _center(line.get("bbox"))
-            if parsed is None or (score is not None and
-                                  (not isinstance(score, (int, float)) or score < MIN_SCORE)) or center is None:
+            trusted_score = (not isinstance(score, bool)
+                             and isinstance(score, (int, float))
+                             and math.isfinite(score)
+                             and MIN_SCORE <= score <= 1.0)
+            if parsed is None or not trusted_score or center is None:
                 uncertain += 1
                 continue
             observations.append({
