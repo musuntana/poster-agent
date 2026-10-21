@@ -43,7 +43,7 @@ GET /api/posters/{poster_id}/versions/{version}/exports/feed_4x5_native
 ## 工程验证
 
 ```bash
-python -m pytest -q tests/test_native_feed.py tests/test_channel_exports.py
+uv run --locked python -m pytest -q tests/test_native_feed.py tests/test_channel_exports.py
 ```
 
 测试覆盖：

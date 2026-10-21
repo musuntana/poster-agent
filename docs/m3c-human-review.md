@@ -49,7 +49,7 @@ Example payload (replace both digest placeholders with the GET response values, 
 
 Download labels to data/my-real-labels.csv and use:
 
-    python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle --output-dir data/eval_runs/m3c_human
+    uv run --no-sync python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle --output-dir data/eval_runs/m3c_human
 
 The existing evaluator verifies actual saved PNG and OCR report SHA-256 before calculating field-level precision/recall/F1. If the real PaddleOCR model has not been run and saved, it will not invent numbers. Current CI uses simulated OCR.
 
@@ -64,6 +64,6 @@ The existing evaluator verifies actual saved PNG and OCR report SHA-256 before c
 
 ## Developer validation
 
-Run: python -m pytest -q
+Run: uv run --locked python -m pytest -q
 
 The added tests cover version/hash checks, complete annotation requirements, history preservation, reviewer isolation, CSV exclusion of unsure labels, and direct integration of exported labels with the M3b real-report scorer (using a mocked OCR response).

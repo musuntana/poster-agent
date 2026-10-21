@@ -1,0 +1,47 @@
+[project]
+name = "poster-agent"
+version = "0.3.2"
+description = "Local-first ecommerce poster generation and quality evaluation"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "python-multipart>=0.0.20,<1",
+  "pydantic>=2.9,<3",
+  "pillow>=11,<13",
+  "httpx>=0.27,<1",
+  "python-dotenv>=1,<2",
+  "jinja2>=3.1,<4",
+  "langgraph>=1,<2",
+  "langgraph-checkpoint-sqlite>=3,<4",
+]
+
+[project.optional-dependencies]
+# The PaddlePaddle runtime is platform-specific and installed explicitly
+# from the vendor CPU index after syncing this extra (see docs/uv-workflow.md).
+ocr = ["paddleocr==3.3.0"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.13,<1",
+]
+
+[tool.uv]
+# This is an app launched with "uv run", not a distributable Python wheel.
+package = false
+required-version = ">=0.10,<0.11"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["data", ".venv", ".venv-ocr"]
+
+[tool.ruff.lint]
+# Guard against syntax and undefined-name bugs first, without reformatting
+# unrelated legacy modules as part of this dependency migration.
+select = ["E4", "E9", "F63", "F7", "F82"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

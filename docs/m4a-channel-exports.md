@@ -41,7 +41,7 @@ GET /api/posters/{poster_id}/versions/{version}/exports/{preset}
 ## 验证
 
 ```bash
-python -m pytest -q tests/test_channel_exports.py
+uv run --locked python -m pytest -q tests/test_channel_exports.py
 ```
 
 自动化测试验证三种尺寸、生成字节确定性、居中图层**逐像素相等**（即中央原海报没有裁剪）、修改前后版本隔离、来源 SHA、原始 PNG 和 metadata 不变、完全不调用 Qwen，以及无效路径拒绝。

@@ -40,7 +40,7 @@ For offline/none mode, an overlay can show **template zones only**. It must expl
 ## Developer tests (all mock OCR)
 
 ```bash
-python -m pytest -q tests/test_ocr_overlay.py tests/test_ocr_price_layout.py tests/test_acceptance.py
+uv run --locked python -m pytest -q tests/test_ocr_overlay.py tests/test_ocr_price_layout.py tests/test_acceptance.py
 ```
 
 Test contracts:
@@ -50,4 +50,4 @@ Test contracts:
 - Missing report, invalid poster/version/mode and stale image/spec report are rejected.
 - v1 and v2 use different saved reports, not each other's evidence.
 
-**CI runs mocked OCR rows only.** Green CI does not prove PaddleOCR has actually run on your Mac. To validate the real model, use `python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png`, then trigger PaddleOCR Acceptance Gate on a real poster.
+**CI runs mocked OCR rows only.** Green CI does not prove PaddleOCR has actually run on your Mac. To validate the real model, use `uv run --no-sync python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png`, then trigger PaddleOCR Acceptance Gate on a real poster.

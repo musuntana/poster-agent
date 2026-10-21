@@ -32,37 +32,43 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-      - name: Setup Python 3.12
-        uses: actions/setup-python@v5
+      - name: Setup uv with pinned release and dependency cache
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          python-version: "3.12"
-          cache: pip
+          version: "0.10.0"
+          enable-cache: true
+          prune-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install Python 3.12 using uv
+        run: uv python install 3.12
       - name: Install OCR system runtime and Chinese fonts
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 fonts-noto-cjk
-      - name: Install base dependencies
+      - name: Install locked application with optional OCR dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements-dev.txt
-      - name: Install actual PaddlePaddle CPU and PaddleOCR engine
+          uv lock --check
+          uv sync --locked --no-dev --extra ocr
+      - name: Install platform-specific PaddlePaddle CPU runtime
         run: |
-          python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-          python -m pip install paddleocr==3.3.0
-          python -c "import platform,paddle,paddleocr; print('PLATFORM',platform.platform()); print('PADDLE',paddle.__version__); print('PADDLEOCR',paddleocr.__version__)"
+          # PaddlePaddle CPU distribution uses the upstream vendor index.
+          # uv sync must run BEFORE installing this platform-specific engine.
+          uv pip install --python .venv/bin/python paddlepaddle==3.2.0 \
+            --index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
+          uv run --no-sync python -c "import platform,paddle,paddleocr; print('PLATFORM',platform.platform()); print('PADDLE',paddle.__version__); print('PADDLEOCR',paddleocr.__version__)"
       - name: Generate deterministic synthetic poster
-        run: python -m scripts.generate_demo
+        run: uv run --no-sync python -m scripts.generate_demo
       - name: Execute genuine PaddleOCR on synthetic PNG
         timeout-minutes: 15
         run: |
           mkdir -p data/eval_runs/real_ocr_ci
-          python -m scripts.ocr_probe \
+          uv run --no-sync python -m scripts.ocr_probe \
             --infer --include-text \
             --image data/examples/sample_preview.png \
             --output data/eval_runs/real_ocr_ci/probe.json
       - name: Assert original image, OCR lines, boxes and runtime provenance
         run: |
-          python -m scripts.verify_real_ocr_evidence \
+          uv run --no-sync python -m scripts.verify_real_ocr_evidence \
             --probe data/eval_runs/real_ocr_ci/probe.json \
             --image data/examples/sample_preview.png \
             --expected-platform Linux \
@@ -70,10 +76,10 @@ jobs:
       - name: Replay 20 code-rendered PNGs with genuine OCR (manual full run only)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_benchmark }}
         run: |
-          python -m scripts.run_image_benchmark \
+          uv run --no-sync python -m scripts.run_image_benchmark \
             --ocr paddle \
             --output-dir data/eval_runs/real_ocr_ci/benchmark
-          python -m scripts.verify_real_ocr_evidence \
+          uv run --no-sync python -m scripts.verify_real_ocr_evidence \
             --probe data/eval_runs/real_ocr_ci/probe.json \
             --image data/examples/sample_preview.png \
             --expected-platform Linux \

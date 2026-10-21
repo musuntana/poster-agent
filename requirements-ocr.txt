@@ -1,5 +1,0 @@
-# Optional: OCR is not required to run M1/M2 or unit tests.
-# The PaddlePaddle inference engine must be installed for the host platform.
-# See https://www.paddleocr.ai/main/en/version3.x/installation.html
--r requirements.txt
-paddleocr>=3,<4
