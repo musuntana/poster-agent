@@ -260,9 +260,9 @@ $('checkNative').addEventListener('click', async () => {
     $('nativeGateStatus').textContent='原生 4:5：'+report.auto_checks+' · OCR：'+report.ocr_status+' · '+report.verdict;
     $('nativeGateStatus').className='tip '+(report.auto_checks==='FAIL'?'bad':'');
     $('nativeGateResult').textContent=report.checks.map(c=>
-      c.status+' | '+c.name+'：'+c.detail).join('\\n')+
-      '\\n\\n图片 SHA-256：'+report.native_image_sha256+
-      '\\n独立报告：未继承方形版验收结果；仍需人工确认。';
+      c.status+' | '+c.name+'：'+c.detail).join('\n')+
+      '\n\n图片 SHA-256：'+report.native_image_sha256+
+      '\n独立报告：未继承方形版验收结果；仍需人工确认。';
   }catch(e){
     $('nativeGateStatus').textContent='验收失败：'+e.message;
     $('nativeGateStatus').className='tip bad';
