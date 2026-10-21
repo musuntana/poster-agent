@@ -112,6 +112,12 @@ python -m scripts.run_image_benchmark --ocr paddle
 
 安装说明、测试边界及后续使用人工标签计算真实指标的方法详见 [docs/m3d-ocr-runtime.md](docs/m3d-ocr-runtime.md)。CI 不下载或加载真实 PaddleOCR 模型。
 
+## M3e：OCR 价格区域与冲突金额核验
+
+新增模板坐标感知的 `ocr_price_position` / `ocr_original_price_position` 验收规则：活动价正确数字如果只出现在原价区域，也不能判为合格。同一区域出现两个冲突金额会被阻断；OCR 没有坐标或有效置信度则显示 `UNVERIFIED`，不会伪报通过。
+
+本功能只适用于当前 1024×1024 Pillow 固定版式，**不代表真实 PaddleOCR 已在你的 Mac 上完成推理**，也不改变 M3b 原有仅基于 OCR 文本的评测指标。详见 [M3e 规则说明](docs/m3e-ocr-price-position.md)。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。

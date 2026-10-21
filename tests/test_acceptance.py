@@ -52,12 +52,19 @@ def test_mocked_ocr_and_brand_rules_can_pass_checks_but_still_need_review(tmp_pa
     poster_id = _create(tmp_path, monkeypatch, product_bytes)
     def fake_ocr(image_path):
         assert image_path.is_file()
-        return [{"text": t, "score": .98, "bbox": None}
-                for t in ["电动牙刷促销", "¥199", "¥399", "立即抢购", "品质生活 · 限时优惠"]]
+        return [
+            {"text": "电动牙刷促销", "score": .98, "bbox": [80, 274, 435, 336]},
+            {"text": "¥199", "score": .98, "bbox": [68, 679, 297, 763]},
+            {"text": "原价 ¥399", "score": .98, "bbox": [77, 801, 336, 839]},
+            {"text": "立即抢购", "score": .98, "bbox": [91, 880, 374, 923]},
+            {"text": "品质生活 · 限时优惠", "score": .98, "bbox": [80, 382, 423, 413]},
+        ]
     monkeypatch.setattr("app.acceptance.recognize", fake_ocr)
     result = client.post(_url(poster_id), json={"ocr_mode": "paddle"}).json()
     assert result["ocr_status"] == "OK"
     assert result["auto_checks"] == "PASS"
+    assert any(c["name"] == "ocr_price_position" and c["status"] == "PASS"
+               for c in result["checks"])
     assert result["verdict"] == "REVIEW_REQUIRED"
     assert all(check["status"] == "PASS" for check in result["checks"])
     assert client.get(_url(poster_id) + "?ocr_mode=paddle").status_code == 200
