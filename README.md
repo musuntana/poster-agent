@@ -1,4 +1,4 @@
-# Poster Agent · M1/M2 生成与可靠性 + M3a 自动质量验收
+# Poster Agent · M1/M2 可用产品 + M3a 验收 + M3b 评测闭环
 
 M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
 
@@ -53,6 +53,18 @@ M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 
 - 自动验收无论结果如何，**仍需人工审核**；没有自动发布或自动修复。
 
 默认依赖不包含 PaddleOCR 大模型。Mac M1 上是否能运行 Paddle 推理依赖取决于安装环境，请按官方平台说明选择 CPU 运行时。详见 `docs/m3a-acceptance.md`。
+
+## M3b 新增：可复现 OCR 误判评测
+
+20 条人工设计的**合成样本**用于回归测试价格误匹配、OCR 漏字、误报、漏检、低置信度及未验证状态。可生成 Precision/Recall/F1/覆盖率和逐案例 CSV：
+
+```bash
+python -m scripts.evaluate_acceptance
+```
+
+另新增 `python -m scripts.evaluate_real_reports --annotations 你的人工标注.csv` 工具，可按图片与报告 SHA-256 匹配**真实**导出海报的人工标签。没有真实标注的情况下，不会产生所谓真实准确率。
+
+详见 `docs/m3b-evaluation.md`。本阶段也修复了 `¥199.90` 被误判为期望 `¥199` 的缺陷。
 
 ## 0. 环境
 
