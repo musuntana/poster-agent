@@ -59,7 +59,8 @@ def _has_text(texts: list[str], expected: str) -> bool:
     # accidentally be matched by a different number elsewhere in the poster.
     target = _norm(expected)
     if target.startswith("¥"):
-        # A matching price must be a complete amount: ¥199 must not match\n        # ¥1990 or ¥199.90 (one more digit or a fractional extension).
+        # A matching price must be a complete amount: ¥199 must not match
+        # ¥1990 or ¥199.90 (one more digit or a fractional extension).
         escaped = re.escape(target)
         return any(re.search(r"(?<![0-9])" + escaped + r"(?![0-9.,．])", _norm(line)) for line in texts)
     return any(target == _norm(line) or target in _norm(line) for line in texts)
