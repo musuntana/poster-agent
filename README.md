@@ -6,19 +6,21 @@
 
 ## 快速启动
 
-要求 Python 3.11–3.13（推荐 3.12）、可用中文字体；Mac 可使用 PingFang，Linux 可使用 Noto Sans CJK。
+要求 **Python 3.12**（由 uv 根据 `.python-version` 管理）与中文字体；Mac 使用 PingFang，Linux 使用 Noto Sans CJK。先按 [uv 官方说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv，不需要手动创建/激活 venv。
 
 ```bash
 git clone git@github.com:musuntana/poster-agent.git
 cd poster-agent
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
+uv python install 3.12
+uv sync --locked
 cp .env.example .env
-python -m scripts.generate_demo
-python -m pytest -q
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run --locked uv run --locked python -m scripts.generate_demo
+uv run --locked python -m pytest -q
+uv run --locked ruff check app scripts evals tests
+uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+项目依赖以 `pyproject.toml` 为唯一声明、`uv.lock` 为可复现版本锁，开发依赖置于 `dev` 组。请用 `uv add` 更新依赖并同时提交锁文件；完整说明见 [uv 使用手册](docs/uv-workflow.md)。
 
 打开 <http://127.0.0.1:8000>；API 文档在 <http://127.0.0.1:8000/docs>。首次示例会在 `data/examples/` 生成测试素材及预览图。若中文缺字，在 `.env` 中设置本机存在的 `POSTER_FONT_PATH`。
 
@@ -44,21 +46,21 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 ## 常用操作
 
-**无需云端 Key：** 网页选择本地背景，生成、修改并导出；`python -m scripts.generate_demo` 可检查本地字体与渲染。
+**无需云端 Key：** 网页选择本地背景，生成、修改并导出；`uv run --locked python -m scripts.generate_demo` 可检查本地字体与渲染。
 
 **可选 Qwen 真实背景：** 在 `.env` 设置 `DASHSCOPE_API_KEY`、对应区域/Workspace 的 `QWEN_IMAGE_ENDPOINT`，以及 `QWEN_IMAGE_MODEL`。确保 Key、服务地域和模型互相匹配；勿将 `.env` 提交。详细变量模板见 [`.env.example`](.env.example)。Qwen 结构化 Brief 可按模板配置 `QWEN_CHAT_ENDPOINT`。
 
-**OCR 环境诊断及真实单图推理（可选）：**
+**OCR 环境诊断及真实单图推理（可选）：** 先按 [uv + OCR 安装说明](docs/uv-workflow.md#ocr-重依赖按需安装) 执行 `uv sync --locked --extra ocr`，再安装对应平台的 PaddlePaddle 推理引擎。
 
 ```bash
-python -m scripts.ocr_probe
-python -m scripts.generate_demo
-python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
+uv run --no-sync python -m scripts.ocr_probe
+uv run --locked python -m scripts.generate_demo
+uv run --no-sync python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
 ```
 
-`--infer` 需要安装真实的 PaddlePaddle / PaddleOCR，默认开发依赖并不包含大型模型；安装建议参见 [本地 OCR 运行手册](docs/m3d-ocr-runtime.md)。Linux CI 的成功记录**不能当成 Mac 本机成功记录**。
+`--infer` 需额外安装真实 PaddlePaddle / PaddleOCR，使用 `uv run --no-sync` 保留平台专属推理包；安装见 [uv 工作流](docs/uv-workflow.md) 和 [本地 OCR 说明](docs/m3d-ocr-runtime.md)。Linux CI 的成功记录**不能当成 Mac 本机成功记录**。
 
-**质量评测：** `python -m scripts.evaluate_acceptance` 重放合成文本测试；`python -m scripts.run_image_benchmark --ocr none` 生成 20 张 PNG 并标注 OCR 未运行；`--ocr paddle` 才调用真实本地 OCR。对实际海报请在网页中先人工审核并导出 CSV，再运行 `python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle`（要求已有与图片哈希一致的真实 OCR 报告）。
+**质量评测：** `uv run --locked python -m scripts.evaluate_acceptance` 重放合成文本测试；`uv run --locked python -m scripts.run_image_benchmark --ocr none` 生成 20 张 PNG 并标注 OCR 未运行；`--ocr paddle` 才调用真实本地 OCR。对实际海报请在网页中先人工审核并导出 CSV，再运行 `uv run --no-sync python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle`（要求已有与图片哈希一致的真实 OCR 报告）。
 
 ## GitHub Actions 额度策略
 
