@@ -194,7 +194,7 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
@@ -340,5 +340,19 @@ $('saveHuman').addEventListener('click',async()=>{
   }
 });
 refreshExportLink();
+
+(async function restoreLastPoster(){
+  const last=localStorage.getItem('poster-last-id');
+  if(!last || !/^[a-f0-9]{32}$/.test(last))return;
+  try{
+    const response=await fetch('/api/posters/'+last);
+    if(!response.ok)throw Error('poster unavailable');
+    if(current)return;
+    display(await response.json());
+  }catch(e){
+    localStorage.removeItem('poster-last-id');
+    $('metadata').textContent='上次海报无法恢复，可以重新生成';
+  }
+})();
 </script>
 </body></html>
