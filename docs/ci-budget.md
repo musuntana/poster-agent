@@ -6,7 +6,7 @@ GitHub Actions 不再因**每次 push / 每次 PR synchronize** 就自动执行�
 
 | 类型 | 触发时机 | 执行内容 | 自动触发？ |
 |---|---|---|---|
-| 快速 CI | 有代码变更的 PR 从 Draft 切换成 Ready for review | Python compileall + pytest | **仅一次** |
+| 快速 CI | 有代码变更的 PR 从 Draft 切换成 Ready for review | Ruff + Ruff + Python compileall + pytest | **仅一次** |
 | 快速 CI（补测） | 给已有 PR 添加 `ci:run` 标签 | Python compileall + pytest | 明确标记时才触发 |
 | 快速 CI（手动） | Actions → CI → Run workflow，选择 `quick` | Python compileall + pytest | 否 |
 | 完整 CI（手动） | Actions → CI → Run workflow，选择 `full` | 快速 CI + 合成 OCR 评测 + 20 张 PNG + 产物上传 + demo | 否 |
@@ -14,7 +14,7 @@ GitHub Actions 不再因**每次 push / 每次 PR synchronize** 就自动执行�
 
 不配置 `push`，不配置 `schedule`。合并 PR 到 `main` 不会再触发一遍普通 CI。昂贵的 OCR 工作流没有 `pull_request` 或 `push` 事件。
 
-文档、README 或 Markdown 文件单独变化时，普通 CI 的 PR 路径过滤器默认不会启动 Runner。更改代码、测试、requirements 或工作流文件时，在 PR 切换到 Ready for review 的那一刻运行一次快速检查。
+文档、README 或 Markdown 文件单独变化时，普通 CI 的 PR 路径过滤器默认不会启动 Runner。更改代码、测试、pyproject.toml、uv.lock 或工作流文件时，在 PR 切换到 Ready for review 的那一刻运行一次快速检查。
 
 ### 推荐日常流程
 
@@ -26,6 +26,8 @@ GitHub Actions 不再因**每次 push / 每次 PR synchronize** 就自动执行�
 6. 仅在 OCR 引擎、模型或推理代码调整后，有明确需要时手动运行 `Real PaddleOCR CPU`。
 
 **注意：** PR 如果创建时就处于 Ready 状态，不会触发 `ready_for_review` 事件。此时请添加 `ci:run` 标签或手动运行。标签首次使用可在 GitHub Issues/Labels 创建一个普通标签 `ci:run`；其他标签不会启动测试 Runner。
+
+项目依赖已统一到 `pyproject.toml` + `uv.lock`；见 [uv 工作流](uv-workflow.md)。
 
 ### Actions 页面手动启动
 
@@ -45,7 +47,7 @@ gh workflow run ci.yml --ref feature/my-change -f level=full
 gh workflow run real-ocr.yml --ref main -f full_benchmark=false
 ```
 
-**不要因没有 CI 自动运行就认为代码已经通过测试。** 合并前，至少用本机 `python -m pytest -q`，或在 PR 的最终 commit 上显式触发一次快速 CI。CI 的状态对应特定 commit；如果最后一次 CI 后又改了代码，原来的通过结果不保证适用于新提交。
+**不要因没有 CI 自动运行就认为代码已经通过测试。** 合并前，至少用本机 `uv run --locked python -m pytest -q`，或在 PR 的最终 commit 上显式触发一次快速 CI。CI 的状态对应特定 commit；如果最后一次 CI 后又改了代码，原来的通过结果不保证适用于新提交。
 
 ### 费用优化与重要限制
 
