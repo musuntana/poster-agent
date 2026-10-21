@@ -44,10 +44,10 @@ def load_labels(path: Path) -> list[dict]:
                 if identity in seen:
                     raise ValueError("重复的同海报版本字段")
                 seen.add(identity)
-                records.append({**dict(zip(_REQUIRED, [None]*len(_REQUIRED))), **{
+                records.append({
                     "poster_id": poster_id, "version": version, "field": field,
                     "defective": answer == "true", "image_sha256": sha, "reviewer": reviewer,
-                }})
+                })
             except (ValueError, AttributeError, TypeError) as exc:
                 raise ValueError(f"标注 CSV 第 {i} 行无效，请修正数据") from exc
         if not records:
