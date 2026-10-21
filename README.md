@@ -129,6 +129,20 @@ Acceptance Gate 运行后可在网页直接查看/导出**诊断 PNG**：叠加�
 
 详见 [docs/m3f-ocr-visual-diagnostics.md](docs/m3f-ocr-visual-diagnostics.md)。
 
+## M3g：在 GitHub Linux CPU 上执行真正的 PaddleOCR
+
+之前 GitHub CI 中的 OCR 数据都是模拟的，因此还不能证明真实模型运行。现在新增**独立的 GitHub Actions 工作流**，可以手动启动真实 PaddlePaddle/PaddleOCR CPU 推理：
+
+- 下载真实模型，在程序生成的 PNG 上运行单图 OCR；
+- 保存运行时依赖版本、耗时、识别行、文字框和原始图像 SHA-256；
+- 独立校验证据，缺少真实推理结果或坐标框时失败；
+- 可选择扩展为 20 张程序渲染图片的真实 OCR 回放；
+- 不使用业务照片、不触发收费 Qwen API，不与快速单元测试混为一谈。
+
+**Linux CI 实测不等于你的 Mac M1 已实测。** 首次运行以真实 Actions 状态为准，不能凭代码提交声称推理成功。
+
+操作：[docs/m3g-real-ocr-actions.md](docs/m3g-real-ocr-actions.md)。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。
