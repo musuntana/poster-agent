@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M3c</title>
+<title>Poster Agent · M4a</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
@@ -36,7 +36,7 @@
 <div class="actions" style="margin-top:12px"><button id="checkExecution" type="button" class="secondary">查询最近执行状态</button></div>
 <p id="executionStatus" class="tip">生成请求会保存本地幂等键。网络断开时先查状态，不重复付费生图。</p>
 </form>
-<p class="tip">M1 限制：单张 1024×1024；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
+<p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
 </section>
 <section class="panel">
 <h2>02 · 预览与修改</h2>
@@ -51,8 +51,21 @@
 <div class="actions"><button id="saveEdit" type="submit">保存新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
 </form>
 <div class="tip" id="editStatus"></div><div class="tip" id="history"></div>
+<section class="mt" id="channelFormats">
+<h2>04 · 多渠道导出（原版完整保留）</h2>
+<p class="tip">同一海报派生多个渠道尺寸：保留原图所有内容，模糊背景填充空白。不会再次调用 Qwen；这是安全缩放，不是针对每个尺寸的重新排版或自动验收。</p>
+<div class="row"><label>选择导出规格</label>
+<select id="channelPreset">
+<option value="feed_4x5">信息流竖版 · 1080×1350（4:5）</option>
+<option value="story_9x16">故事 / 竖屏 · 1080×1920（9:16）</option>
+<option value="landscape_16x9">横向展示 · 1200×675（16:9）</option>
+</select></div>
+<img id="channelPreview" class="preview" alt="渠道导出预览（完整保留方形海报）" loading="lazy">
+<div class="actions"><a id="channelDownload" href="#" download="poster-channel.png">导出该尺寸 PNG</a></div>
+<p class="tip">导出前请目视检查字号、对比度与渠道规范。1024×1024 源图的 OCR 验收结论不自动适用于派生图。</p>
+</section>
 <section class="mt">
-<h2>04 · Acceptance Gate（自动验收）</h2>
+<h2>05 · Acceptance Gate（自动验收）</h2>
 <p class="tip">检测每个海报版本。规则检查与真实 OCR 分开执行；未运行 OCR 不会视为通过。</p>
 <div class="row"><label>验收模式</label><select id="ocrMode">
 <option value="none">规则检查（不运行 OCR）</option>
@@ -68,7 +81,7 @@
 </div>
 </section>
 <section class="mt">
-<h2>05 · 人工标注（真实图片证据）</h2>
+<h2>06 · 人工标注（真实图片证据）</h2>
 <p class="tip">请对照上方 PNG 亲眼检查每个字段。提交后绑定当前版本的 SHA-256；这是你自己提供的标签，并非模型验证。</p>
 <div class="row"><label>审核员代号（2–40 位英文、数字、_、-）</label><input id="humanReviewer" value="local-operator" maxlength="40"></div>
 <div id="humanFields">
@@ -199,7 +212,16 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function updateChannelExport(){
+  if(!current)return;
+  const preset=$('channelPreset').value;
+  const url='/api/posters/'+current.poster_id+'/versions/'+current.version+'/exports/'+preset;
+  $('channelPreview').src=url;
+  $('channelDownload').href=url;
+  $('channelDownload').download='poster-v'+current.version+'-'+preset+'.png';
+}
+$('channelPreset').addEventListener('change',updateChannelExport);
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
