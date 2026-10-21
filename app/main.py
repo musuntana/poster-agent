@@ -22,6 +22,7 @@ from .brief_routes import router as brief_router
 from .acceptance_routes import router as acceptance_router
 from .human_review_routes import router as human_review_router
 from .channel_export_routes import router as channel_export_router
+from .native_acceptance_routes import router as native_acceptance_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -38,6 +39,7 @@ app.include_router(review_router)
 app.include_router(acceptance_router)
 app.include_router(human_review_router)
 app.include_router(channel_export_router)
+app.include_router(native_acceptance_router)
 MAX_UPLOAD = 10 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
