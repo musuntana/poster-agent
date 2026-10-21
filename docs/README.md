@@ -21,6 +21,7 @@
 | 商品图 ICC → sRGB 处理 | [m5b-color-management.md](m5b-color-management.md) | Pillow ImageCms 色彩转换、Alpha 保留、无效 ICC 拒绝 |
 | 4:5 原生人工质量标注 | [m5c-native-human-review.md](m5c-native-human-review.md) | SKU、可读性、构图、文案的版本级独立审核/CSV |
 | 4:5 原生 OCR × 人工评测 | [m5d-native-evaluation.md](m5d-native-evaluation.md) | 独立报告/图片哈希核验、空间价格规则与弃判指标 |
+| 一键盘点原生 4:5 试验 | [m5e-native-trial.md](m5e-native-trial.md) | 审核 / OCR 缺口清单、不同 SKU 计数、显式评分与标签快照 |
 
 ## 证据边界
 

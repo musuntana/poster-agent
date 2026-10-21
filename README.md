@@ -46,6 +46,8 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M5d 已新增 4:5 原生报告评测：** 对已有原生人工 CSV 与对应成功 PaddleOCR 报告做逐字段 TP/FP/FN/TN、弃判和覆盖率统计；活动价/原价必须同时核对文字及专属坐标，SKU 完整度、构图等仅做人工统计，不伪装为自动模型精度。没有真实报告则拒绝评分。参见 [M5d 评测说明](docs/m5d-native-evaluation.md)。
 
+**M5e 已提供本地评测盘点：** 使用 `uv run --locked python -m scripts.native_trial --reviewer local-operator` 自动找出未审核、缺真实 OCR 或报告过期的原生 4:5 版本；显式加入 `--score` 才会复用 M5d 生成指标和完整 CSV 标签快照。会提示不同商品素材数量不足，避免多个改价版本被误当成独立商品。参见 [M5e 试验手册](docs/m5e-native-trial.md)。
+
 所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
 
 ## 常用操作
