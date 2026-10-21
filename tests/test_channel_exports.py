@@ -22,8 +22,8 @@ def _source_png() -> bytes:
     img = Image.new("RGB", (1024, 1024), "white")
     # Distinct corner pixels make unexpected cropping detectable by comparisons.
     for xy, color in [
-        ((0, 0), "red"), ((1023, 0), "green"),
-        ((0, 1023), "blue"), ((1023, 1023), "yellow"),
+        ((0, 0), (255, 0, 0)), ((1023, 0), (0, 255, 0)),
+        ((0, 1023), (0, 0, 255)), ((1023, 1023), (255, 255, 0)),
     ]:
         img.putpixel(xy, color)
     out = io.BytesIO()
