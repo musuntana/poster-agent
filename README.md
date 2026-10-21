@@ -33,7 +33,9 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 | M3 评测 | 合成 OCR 样本、20 张程序渲染 PNG、FP/FN/F1、逐版人工标注及 CSV | 合成数据不是真实业务精度；人工标签尚无独立审计 |
 | 真实 OCR 证据 | 独立 GitHub Linux CPU PaddleOCR 3.3.0 成功识别一张程序海报（7 行/7 坐标框） | [Actions 证据](https://github.com/musuntana/poster-agent/actions/runs/39586650764)；Mac M1 和真实客户图片尚未实测 |
 
-所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或多尺寸派生。
+**M4a 多尺寸安全派生已实现：** 从已保存的 1024×1024 PNG 离线导出 1080×1350（4:5）、1080×1920（9:16）、1200×675（16:9）。原海报整体等比例缩放、居中，空白部分模糊延展；不会重调 AI 或裁切中央内容。这**不是自适应重排**，新尺寸必须人工重新验收。详见 [M4a 说明](docs/m4a-channel-exports.md)。
+
+所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或原生多尺寸自适应排版。
 
 ## 常用操作
 
