@@ -140,6 +140,7 @@ def test_acceptance_gate_requires_box_evidence_for_complete_pass(tmp_path, monke
         {"text": "¥199", "score": .99},
         {"text": "¥399", "score": .99},
         {"text": "立即抢购", "score": .99},
+        {"text": "品质生活 · 限时优惠", "score": .99},
     ])
     report = client.post(
         f"/api/posters/{poster_id}/versions/1/acceptance",
