@@ -92,6 +92,26 @@ python -m scripts.run_image_benchmark --ocr paddle
 
 详见 docs/m3c-human-review.md。本机仍无鉴权与多租户隔离，请勿部署公网。
 
+## M3d：原生 Mac M1 PaddleOCR 实测与证据
+
+当前代码已新增用于区分“依赖安装”和“真正成功推理”的本机诊断工具。优先使用 ARM64 + Python 3.12 的独立虚拟环境，Mac M1 可以安装 PaddlePaddle 3.2.0 CPU 轮子，但**尚未在你的机器上确认成功**。
+
+```bash
+# 不运行模型，只查看安装状态
+python -m scripts.ocr_probe
+
+# 真正运行 OCR，保存图片 SHA、识别数量、耗时与推理状态
+python -m scripts.generate_demo
+python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
+
+# 单图成功后，再让 PaddleOCR 实测 20 张程序渲染 PNG
+python -m scripts.run_image_benchmark --ocr paddle
+```
+
+真实 OCR 批量结果单独存放在 `data/eval_runs/m3b_images_paddle/`，并保存每张图片的 OCR 识别行与耗时。离线 `--ocr none` 不会冒充实测。
+
+安装说明、测试边界及后续使用人工标签计算真实指标的方法详见 [docs/m3d-ocr-runtime.md](docs/m3d-ocr-runtime.md)。CI 不下载或加载真实 PaddleOCR 模型。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。

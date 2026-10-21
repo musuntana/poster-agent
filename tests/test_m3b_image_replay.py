@@ -32,6 +32,8 @@ def test_no_ocr_reports_all_abstentions_not_automatic_pass(tmp_path):
     manifest = generate_fixture_set(tmp_path / "images")
     report = evaluate_image_manifest(manifest, tmp_path, "none")
     assert report["model_executed"] is False
+    assert report["ocr_observations_file"] is None
+    assert not (tmp_path / "ocr_observations.jsonl").exists()
     assert report["fixture_count"] == 20
     assert report["field_metrics"]["total"] == 60
     assert report["field_metrics"]["abstained"] == 60
@@ -58,6 +60,15 @@ def test_paddle_mode_uses_image_file_and_evaluator_with_mocked_ocr(tmp_path, mon
     monkeypatch.setattr("evals.image_runner.recognize", fake_recognize)
     report = evaluate_image_manifest(manifest_file, tmp_path / "paddle_run", "paddle")
     assert len(called) == 20
+    import json
+    evidence = tmp_path / "paddle_run/ocr_observations.jsonl"
+    assert evidence.is_file()
+    observations = [json.loads(line) for line in evidence.read_text().splitlines()]
+    assert len(observations) == 20
+    assert observations[0]["image_sha256"]
+    assert observations[0]["elapsed_ms"] >= 0
+    assert observations[0]["ocr_lines"][0]["score"] == 0.99
+    assert report["ocr_observations_file"] == "ocr_observations.jsonl"
     assert report["model_executed"] is True  # mocked provider invocation only
     assert report["case_metrics"]["confusion"]["TP"] >= 10
     assert report["case_metrics"]["confusion"]["TN"] == 4

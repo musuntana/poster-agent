@@ -11,6 +11,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import time
+from importlib import metadata
 from collections import defaultdict
 from pathlib import Path
 from typing import Literal
@@ -31,6 +33,7 @@ def evaluate_image_manifest(
     raw_manifest = manifest_file.read_bytes()
     manifest = ImageManifest.model_validate_json(raw_manifest)
     rows: list[dict] = []
+    observations: list[dict] = []
     for fixture in manifest.fixtures:
         image_file = manifest_file.parent / fixture.image_file
         png = image_file.read_bytes()  # missing file is a hard failure
@@ -43,7 +46,15 @@ def evaluate_image_manifest(
             # Must be REAL engine when this mode is requested. No fallback to
             # synthetic OCR lines, no silent substitution of expected labels.
             try:
+                started = time.perf_counter()
                 ocr_lines = recognize(image_file)
+                duration_ms = round((time.perf_counter() - started) * 1000, 2)
+                observations.append({
+                    "case_id": fixture.case_id,
+                    "image_sha256": checksum,
+                    "elapsed_ms": duration_ms,
+                    "ocr_lines": ocr_lines,
+                })
             except (OCRUnavailable, OCRExecutionError) as exc:
                 raise RuntimeError(
                     "PaddleOCR 推理不可用或执行失败；未生成任何真实 OCR 指标。请检查运行环境。"
@@ -89,6 +100,12 @@ def evaluate_image_manifest(
     for row in case_rows:
         grouped[row["category"]].append(row["outcome"])
 
+    model_version = None
+    if ocr_mode == "paddle":
+        try:
+            model_version = metadata.version("paddleocr")
+        except metadata.PackageNotFoundError:
+            model_version = None
     report = {
         "dataset_id": manifest.dataset_id,
         "dataset_kind": manifest.dataset_kind,
@@ -97,6 +114,9 @@ def evaluate_image_manifest(
                     "ocr_mode=paddle and this evaluation returned successfully."),
         "ocr_mode": ocr_mode,
         "model_executed": ocr_mode == "paddle",
+        "paddleocr_package_version": model_version,
+        "ocr_observations_file": "ocr_observations.jsonl" if ocr_mode == "paddle" else None,
+        "privacy_note": "OCR transcripts can contain private text; only store them in ignored local data/eval_runs.",
         "fixture_count": len(manifest.fixtures),
         "manifest_sha256": hashlib.sha256(raw_manifest).hexdigest(),
         "case_metrics": metrics([row["outcome"] for row in case_rows]),
@@ -105,6 +125,11 @@ def evaluate_image_manifest(
         "errors": [row for row in rows if row["outcome"] in ("FP", "FN", "ABSTAIN_DEFECT")],
     }
     output_dir.mkdir(parents=True, exist_ok=True)
+    if ocr_mode == "paddle":
+        # Ground the score in raw observations, not only derived judgments.
+        with (output_dir / "ocr_observations.jsonl").open("w", encoding="utf-8") as out:
+            for observation in observations:
+                out.write(json.dumps(observation, ensure_ascii=False) + "\n")
     (output_dir / "image_benchmark_summary.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
