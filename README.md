@@ -118,6 +118,17 @@ python -m scripts.run_image_benchmark --ocr paddle
 
 本功能只适用于当前 1024×1024 Pillow 固定版式，**不代表真实 PaddleOCR 已在你的 Mac 上完成推理**，也不改变 M3b 原有仅基于 OCR 文本的评测指标。详见 [M3e 规则说明](docs/m3e-ocr-price-position.md)。
 
+## M3f：OCR 识别框可视化与报告证据核对
+
+Acceptance Gate 运行后可在网页直接查看/导出**诊断 PNG**：叠加固定 1024×1024 模板的活动价、原价区域及已保存的 OCR 坐标框，用颜色区分 PASS/FAIL/UNVERIFIED，辅助人工判断误报与漏检原因。
+
+- 读取已有报告，**不重新执行 OCR**，不会覆盖原始海报。
+- 严格核对报告与当前图片、规格的 SHA-256；报告缺失或过期会拒绝出图。
+- OCR 未运行或没有有效坐标时，不伪造识别框；沿用报告前 35 行识别证据上限。
+- 该功能是单机版的可视化诊断，不是自动修复，更不是已完成真实 PaddleOCR 的证据。
+
+详见 [docs/m3f-ocr-visual-diagnostics.md](docs/m3f-ocr-visual-diagnostics.md)。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。

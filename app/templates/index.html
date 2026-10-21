@@ -61,6 +61,11 @@
 <div class="actions"><button class="secondary" type="button" id="runGate">检查当前版本</button>
 <span class="tip" id="gateStatus">尚未验收</span></div>
 <pre id="gateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;line-height:1.7;max-height:330px;overflow:auto">暂无报告</pre>
+<div id="overlayPanel" class="hidden">
+  <p class="tip">OCR 框和价格区域叠加图（仅供诊断）。蓝色小框来自报告中的 OCR 坐标；其他区域颜色代表位置检查状态。无坐标不代表通过。</p>
+  <img id="overlayPreview" alt="OCR bounding boxes and expected price zones diagnostic" style="width:100%;border-radius:12px;margin-top:8px">
+  <div class="actions"><a id="downloadOverlay" href="#" download="ocr-diagnostic.png">导出诊断 PNG</a></div>
+</div>
 </section>
 <section class="mt">
 <h2>05 · 人工标注（真实图片证据）</h2>
@@ -194,7 +199,7 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
@@ -246,6 +251,13 @@ $('runGate').addEventListener('click', async () => {
     $('gateStatus').className='tip '+(report.auto_checks==='FAIL'?'bad':'');
     const items=report.checks.map(c=>c.status+' | '+c.name+'：'+c.detail);
     $('gateResult').textContent=items.join('\n')+'\n\n注：即使自动检查 PASS，仍需人工确认，不能直接投放。';
+    // OCR evidence is derived from the saved version's report and does not rerun OCR.
+    const overlay='/api/posters/'+posterId+'/versions/'+version
+      +'/acceptance/overlay?ocr_mode='+encodeURIComponent(report.ocr_mode);
+    $('overlayPreview').src=overlay;
+    $('downloadOverlay').href=overlay;
+    $('downloadOverlay').download='poster-'+posterId.slice(0,8)+'-v'+version+'-ocr.png';
+    $('overlayPanel').classList.remove('hidden');
   } catch(error) {
     $('gateStatus').textContent='验收失败：'+error.message;
     $('gateStatus').className='tip bad';
