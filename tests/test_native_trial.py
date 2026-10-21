@@ -5,6 +5,7 @@ No customer images, no OCR model downloads and no network inference.
 from __future__ import annotations
 
 import json
+import hashlib
 
 import pytest
 from fastapi.testclient import TestClient
@@ -146,6 +147,9 @@ def test_one_command_scores_only_explicitly_and_counts_unique_sku(
     assert scored["ocr_text_labels"] == 10
     assert scored["metrics"]["confusion"]["TN"] == 10
     assert scored["ready_distinct_product_sha256_count"] == 1
+    assert hashlib.sha256(
+        (destination / "native_trial_labels.csv").read_bytes()
+    ).hexdigest() == scored["label_csv_sha256"]
     assert (destination / "native_real_summary.json").exists()
     assert (destination / "native_real_cases.csv").exists()
     assert storage.view(pid)["versions"] == [1, 2]
@@ -175,7 +179,7 @@ def test_stale_ocr_is_blocked_even_when_human_review_still_valid(
     summary, rows = audit_trial(REVIEWER)
     assert summary["can_score"] is False
     assert rows[0]["status"] == "OCR_STALE"
-    with pytest.raises(ValueError, match="缺口清单"):
+    with pytest.raises(ValueError, match="未完成"):
         run_trial(REVIEWER, tmp_path / "out", score=True)
 
 
