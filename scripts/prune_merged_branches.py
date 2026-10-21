@@ -79,7 +79,8 @@ def _api(*args: str) -> str:
 def _get_pages(repo: str, endpoint: str) -> list[dict]:
     # This maintenance workflow deliberately fails closed instead of silently
     # evaluating an incomplete first page of a large repository.
-    raw = json.loads(_api(f"repos/{repo}/{endpoint}?per_page=100"))
+    separator = "&" if "?" in endpoint else "?"
+    raw = json.loads(_api(f"repos/{repo}/{endpoint}{separator}per_page=100"))
     if not isinstance(raw, list) or len(raw) >= 100:
         raise RuntimeError("Too many branch/PR records; pagination-safe audit required")
     return raw
@@ -96,7 +97,7 @@ def main() -> int:
     if args.apply and os.environ.get("ALLOW_BRANCH_PRUNE") != "1":
         parser.error("--apply requires ALLOW_BRANCH_PRUNE=1")
     branches = _get_pages(args.repo, "branches")
-    pulls = _get_pages(args.repo, "pulls?state=all&dummy=1")
+    pulls = _get_pages(args.repo, "pulls?state=all")
     eligible, skipped = candidates(branches, pulls, args.repo)
     report = {
         "repository": args.repo, "mode": "apply" if args.apply else "dry-run",
