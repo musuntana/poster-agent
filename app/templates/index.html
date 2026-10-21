@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M3a</title>
+<title>Poster Agent · M3c</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Poster Agent · M3a</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<header><h1>Poster Agent · M3c</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
 <main class="shell">
 <section class="panel">
 <h2>00 · 自然语言 Brief（可恢复审核）</h2>
@@ -61,6 +61,20 @@
 <div class="actions"><button class="secondary" type="button" id="runGate">检查当前版本</button>
 <span class="tip" id="gateStatus">尚未验收</span></div>
 <pre id="gateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;line-height:1.7;max-height:330px;overflow:auto">暂无报告</pre>
+</section>
+<section class="mt">
+<h2>05 · 人工标注（真实图片证据）</h2>
+<p class="tip">请对照上方 PNG 亲眼检查每个字段。提交后绑定当前版本的 SHA-256；这是你自己提供的标签，并非模型验证。</p>
+<div class="row"><label>审核员代号（2–40 位英文、数字、_、-）</label><input id="humanReviewer" value="local-operator" maxlength="40"></div>
+<div id="humanFields">
+  <div class="row" data-human-field="title"><label>主标题</label><select data-judgment><option value="">请选择</option><option value="correct">实际图片正确</option><option value="defective">实际图片有错误</option><option value="unsure">无法判断</option></select><input data-reason placeholder="依据 / 错误说明（可选）" maxlength="300"></div>
+  <div class="row" data-human-field="price"><label>活动价</label><select data-judgment><option value="">请选择</option><option value="correct">实际图片正确</option><option value="defective">实际图片有错误</option><option value="unsure">无法判断</option></select><input data-reason placeholder="依据 / 错误说明（可选）" maxlength="300"></div>
+  <div class="row" data-human-field="cta"><label>CTA 按钮</label><select data-judgment><option value="">请选择</option><option value="correct">实际图片正确</option><option value="defective">实际图片有错误</option><option value="unsure">无法判断</option></select><input data-reason placeholder="依据 / 错误说明（可选）" maxlength="300"></div>
+  <div class="row" data-human-field="subtitle"><label>副标题</label><select data-judgment><option value="">请选择</option><option value="correct">实际图片正确</option><option value="defective">实际图片有错误</option><option value="unsure">无法判断</option></select><input data-reason placeholder="依据 / 错误说明（可选）" maxlength="300"></div>
+  <div class="row" data-human-field="original_price"><label>原价</label><select data-judgment><option value="">请选择</option><option value="correct">实际图片正确</option><option value="defective">实际图片有错误</option><option value="unsure">无法判断</option></select><input data-reason placeholder="依据 / 错误说明（可选）" maxlength="300"></div>
+</div>
+<div class="actions"><button type="button" id="saveHuman" class="secondary" disabled>保存人工标注</button><a id="exportHuman" href="#" download="poster-human-labels.csv">导出该审核员 CSV</a></div>
+<p id="humanStatus" class="tip">生成海报后，先核对 PNG 再标注。</p>
 </section>
 </section>
 </section>
@@ -180,7 +194,7 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   if(activeReviewRunId && !activeReviewApproved){
     $('createStatus').textContent='请先确认规格，或点击「清除任务 / 手动填写」';
@@ -237,5 +251,94 @@ $('runGate').addEventListener('click', async () => {
     $('gateStatus').className='tip bad';
   } finally {$('runGate').disabled=false;}
 });
+
+let humanContext=null;
+const humanLabels=[...document.querySelectorAll('[data-human-field]')];
+$('humanReviewer').value=localStorage.getItem('poster-human-reviewer')||'local-operator';
+function annotationUrl(){
+  return '/api/posters/'+current.poster_id+'/versions/'+current.version+'/human-review';
+}
+function refreshExportLink(){
+  const reviewer=$('humanReviewer').value.trim();
+  $('exportHuman').href='/api/annotations/export.csv?reviewer='+encodeURIComponent(reviewer);
+}
+async function loadHumanContext(){
+  if(!current)return;
+  humanContext=null;
+  $('saveHuman').disabled=true;
+  const posterId=current.poster_id,version=current.version;
+  humanLabels.forEach(row=>{
+    row.querySelector('[data-judgment]').value='';
+    row.querySelector('[data-reason]').value='';
+    row.hidden=true;
+  });
+  $('humanStatus').textContent='正在载入当前版本校验值…';
+  refreshExportLink();
+  try{
+    const reviewer=$('humanReviewer').value.trim();
+    const response=await fetch(annotationUrl()+'?reviewer='+encodeURIComponent(reviewer));
+    const info=await response.json();
+    if(!response.ok)throw Error(errorText(info));
+    if(!current||current.poster_id!==posterId||current.version!==version)return;
+    humanContext=info;
+    humanLabels.forEach(row=>{
+      const name=row.dataset.humanField;
+      row.hidden=!info.fields_to_review.includes(name);
+      const saved=info.existing_review?.fields?.[name];
+      if(saved){
+        row.querySelector('[data-judgment]').value=saved.judgment;
+        row.querySelector('[data-reason]').value=saved.reason||'';
+      }
+    });
+    $('humanStatus').textContent='v'+version+' · 已有 '+info.review_count+' 条审阅记录（含历史更正）';
+    $('saveHuman').disabled=false;
+  }catch(err){$('humanStatus').textContent='无法载入标注上下文：'+err.message;}
+}
+$('humanReviewer').addEventListener('change',()=>{
+  const alias=$('humanReviewer').value.trim();
+  if(!/^[a-zA-Z0-9_-]{2,40}$/.test(alias)){
+    $('humanStatus').textContent='审核员代号格式无效';
+    $('saveHuman').disabled=true;
+    return;
+  }
+  localStorage.setItem('poster-human-reviewer',alias);
+  loadHumanContext();
+});
+$('saveHuman').addEventListener('click',async()=>{
+  if(!humanContext||!current)return;
+  const reviewer=$('humanReviewer').value.trim();
+  if(!/^[a-zA-Z0-9_-]{2,40}$/.test(reviewer)){ $('humanStatus').textContent='审核员代号无效'; return;}
+  const fields={};
+  for(const row of humanLabels){
+    const name=row.dataset.humanField;
+    if(!humanContext.fields_to_review.includes(name))continue;
+    const judgment=row.querySelector('[data-judgment]').value;
+    if(!judgment){$('humanStatus').textContent='请先为所有显示字段选择正确 / 错误 / 无法判断';return;}
+    fields[name]={judgment,reason:row.querySelector('[data-reason]').value};
+  }
+  const posterId=current.poster_id,version=current.version;
+  $('saveHuman').disabled=true;
+  $('humanStatus').textContent='正在保存附带图片 SHA-256 的人工标签…';
+  try{
+    const response=await fetch(annotationUrl(),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reviewer,image_sha256:humanContext.image_sha256,
+        spec_sha256:humanContext.spec_sha256,fields})
+    });
+    const item=await response.json();
+    if(!response.ok)throw Error(errorText(item));
+    if(current?.poster_id===posterId&&current?.version===version){
+      $('humanStatus').textContent='已保存不可变标注：'+item.review_id+'。如需更正，可再次提交，历史保留。';
+      $('humanStatus').className='tip good';
+    }
+  }catch(err){
+    $('humanStatus').textContent='保存失败：'+err.message;
+    $('humanStatus').className='tip bad';
+  }finally{
+    if(current?.poster_id===posterId&&current?.version===version)
+      $('saveHuman').disabled=false;
+  }
+});
+refreshExportLink();
 </script>
 </body></html>
