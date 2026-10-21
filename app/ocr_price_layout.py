@@ -26,14 +26,14 @@ PRICE_TOKEN = re.compile(r"[¥￥]\s*([0-9][0-9.,．]*)")
 MIN_SCORE = 0.40
 
 
-def _center(box) -> tuple[float, float] | None:
+def _center(box, layout_size: tuple[int, int] = LAYOUT_SIZE) -> tuple[float, float] | None:
     if not isinstance(box, (list, tuple)) or len(box) != 4:
         return None
     if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x)
            for x in box):
         return None
     x1, y1, x2, y2 = (float(v) for v in box)
-    if not (0 <= x1 < x2 <= LAYOUT_SIZE[0] and 0 <= y1 < y2 <= LAYOUT_SIZE[1]):
+    if not (0 <= x1 < x2 <= layout_size[0] and 0 <= y1 < y2 <= layout_size[1]):
         return None
     return (x1 + x2) / 2, (y1 + y2) / 2
 
@@ -53,7 +53,7 @@ def _amount(value: str) -> Decimal | None:
         return None
 
 
-def _tokens(lines: list[dict]) -> tuple[list[dict], int]:
+def _tokens(lines: list[dict], layout_size: tuple[int, int] = LAYOUT_SIZE) -> tuple[list[dict], int]:
     """Return high-confidence price tokens and count ambiguous observations."""
     observations: list[dict] = []
     uncertain = 0
@@ -63,7 +63,7 @@ def _tokens(lines: list[dict]) -> tuple[list[dict], int]:
         for match in matches:
             parsed = _amount(match.group(1))
             score = line.get("score")
-            center = _center(line.get("bbox"))
+            center = _center(line.get("bbox"), layout_size)
             trusted_score = (not isinstance(score, bool)
                              and isinstance(score, (int, float))
                              and math.isfinite(score)
@@ -81,14 +81,20 @@ def _tokens(lines: list[dict]) -> tuple[list[dict], int]:
     return observations, uncertain
 
 
-def assess_price_zones(spec: PosterSpec, ocr_status: str, lines: list[dict]) -> list[dict]:
+def assess_price_zones(
+    spec: PosterSpec, ocr_status: str, lines: list[dict], *,
+    zones: dict[str, tuple[int, int, int, int]] | None = None,
+    layout_size: tuple[int, int] = LAYOUT_SIZE,
+) -> list[dict]:
+    """Template-aware price checks; original 1024px behavior remains default."""
+    zones = PRICE_ZONES if zones is None else zones
     checks = []
-    observations, uncertain = _tokens(lines) if ocr_status == "OK" else ([], 0)
+    observations, uncertain = _tokens(lines, layout_size) if ocr_status == "OK" else ([], 0)
     for field in ("price", "original_price"):
         expected = getattr(spec, field)
         if expected is None:
             continue
-        zone = PRICE_ZONES[field]
+        zone = zones[field]
         located = [o for o in observations
                    if zone[0] <= o["center"][0] <= zone[2]
                    and zone[1] <= o["center"][1] < zone[3]]
@@ -118,7 +124,7 @@ def assess_price_zones(spec: PosterSpec, ocr_status: str, lines: list[dict]) -> 
             "evidence": {
                 "expected": "¥" + price_text(expected),
                 "zone_xyxy": list(zone),
-                "template_size": list(LAYOUT_SIZE),
+                "template_size": list(layout_size),
                 "located_amounts": [str(o["amount"]) for o in located],
                 "outside_expected_count": len(outside),
                 "unlocated_or_low_confidence_currency_tokens": uncertain,
