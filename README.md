@@ -143,6 +143,12 @@ Acceptance Gate 运行后可在网页直接查看/导出**诊断 PNG**：叠加�
 
 操作：[docs/m3g-real-ocr-actions.md](docs/m3g-real-ocr-actions.md)。
 
+## GitHub Actions：节省额度的触发策略
+
+**不会再因每次 push 自动跑 CI。** 普通测试只在有代码变更的 Draft PR 进入 Ready for review 时自动跑一次；需要补测时可添加 `ci:run` 标签或在 Actions 页面手动执行。默认快速检查只运行语法检查和 pytest；额外的 20 张图片回放/构建产物需要手动选 `full`。**真实 PaddleOCR CPU 模型下载与推理只手动触发**，绝不会跟随 push、PR 自动执行。
+
+完整使用方法见 [docs/ci-budget.md](docs/ci-budget.md)。合并前仍需要对最终代码做必要验证；如果启用了分支保护 Required checks，请核对新触发策略是否与规则冲突。
+
 ## 0. 环境
 
 - Python 3.11—3.13（建议 3.11/3.12），macOS M1/M2/M3 适用。
