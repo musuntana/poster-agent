@@ -179,6 +179,9 @@ def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
 
     # Do not mix this content digest of transient UTF-8 CSV with the BOM-prefixed
     # download digest shown by a browser; the scored bytes are specified above.
+    # Persist exact bytes the M5d scorer hashed: a replay must not depend
+    # on exporting mutable "latest" reviews at a later date.
+    (output_dir / "native_trial_labels.csv").write_text(csv_content, encoding="utf-8")
     result["trial_readiness_file"] = "native_trial_readiness.json"
     result["ready_distinct_product_sha256_count"] = summary["ready_distinct_product_sha256_count"]
     return result
