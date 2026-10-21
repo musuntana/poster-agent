@@ -9,3 +9,6 @@ data/posters/
 # Local checkpoint state
 data/*.sqlite3
 data/*.sqlite3-*
+data/eval_runs/
+data/*-labels.csv
+data/my-real-labels.csv
