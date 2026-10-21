@@ -1,0 +1,91 @@
+name: Real PaddleOCR CPU
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_benchmark:
+        description: "Also run all 20 code-rendered PNGs through the real OCR model"
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches:
+      - feature/m3g-real-paddleocr-ci
+    paths:
+      - ".github/workflows/real-ocr.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-ocr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-ocr:
+    name: Real inference on Linux x86_64 CPU
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      PADDLE_PDX_MODEL_SOURCE: BOS
+      OMP_NUM_THREADS: "2"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install OCR system runtime and Chinese fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 fonts-noto-cjk
+      - name: Install base dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+      - name: Install actual PaddlePaddle CPU and PaddleOCR engine
+        run: |
+          python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+          python -m pip install paddleocr==3.3.0
+          python -c "import platform,paddle,paddleocr; print('PLATFORM',platform.platform()); print('PADDLE',paddle.__version__); print('PADDLEOCR',paddleocr.__version__)"
+      - name: Generate deterministic synthetic poster
+        run: python -m scripts.generate_demo
+      - name: Execute genuine PaddleOCR on synthetic PNG
+        run: |
+          mkdir -p data/eval_runs/real_ocr_ci
+          python -m scripts.ocr_probe \
+            --infer --include-text \
+            --image data/examples/sample_preview.png \
+            --output data/eval_runs/real_ocr_ci/probe.json
+      - name: Assert original image, OCR lines, boxes and runtime provenance
+        run: |
+          python -m scripts.verify_real_ocr_evidence \
+            --probe data/eval_runs/real_ocr_ci/probe.json \
+            --image data/examples/sample_preview.png \
+            --expected-platform Linux \
+            --output data/eval_runs/real_ocr_ci/verified.json
+      - name: Replay 20 code-rendered PNGs with genuine OCR (manual full run only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_benchmark }}
+        run: |
+          python -m scripts.run_image_benchmark \
+            --ocr paddle \
+            --output-dir data/eval_runs/real_ocr_ci/benchmark
+          python -m scripts.verify_real_ocr_evidence \
+            --probe data/eval_runs/real_ocr_ci/probe.json \
+            --image data/examples/sample_preview.png \
+            --expected-platform Linux \
+            --benchmark-dir data/eval_runs/real_ocr_ci/benchmark \
+            --output data/eval_runs/real_ocr_ci/verified.json
+      - name: Upload real inference evidence (synthetic data ONLY)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-ocr-linux-cpu-evidence
+          path: |
+            data/eval_runs/real_ocr_ci/
+            data/examples/sample_preview.png
+          if-no-files-found: warn
+          retention-days: 7
