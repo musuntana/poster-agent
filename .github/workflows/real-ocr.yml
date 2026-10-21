@@ -32,7 +32,8 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     env:
-      PADDLE_PDX_MODEL_SOURCE: BOS
+      # Use the default HuggingFace download source on GitHub-hosted runners.
+      # Set PADDLE_PDX_MODEL_SOURCE=BOS locally if HuggingFace is blocked.
       OMP_NUM_THREADS: "2"
       PYTHONUNBUFFERED: "1"
     steps:
@@ -59,6 +60,7 @@ jobs:
       - name: Generate deterministic synthetic poster
         run: python -m scripts.generate_demo
       - name: Execute genuine PaddleOCR on synthetic PNG
+        timeout-minutes: 15
         run: |
           mkdir -p data/eval_runs/real_ocr_ci
           python -m scripts.ocr_probe \
