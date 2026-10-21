@@ -1,99 +1,66 @@
-# M3d: Run real PaddleOCR on Apple Silicon and retain verifiable evidence
+# M3d：PaddleOCR 本地诊断与真实推理证据（uv 环境）
 
-This increment does **not** claim your Mac has run OCR. It adds a local workflow to prove whether a specific installation and image actually worked.
+> 本项目开发与 CI 已采用 **uv + Python 3.12 + pyproject.toml + uv.lock**。请先查看 [uv 使用手册](uv-workflow.md)，不要执行历史 pip requirements 的安装命令。
 
-## Platform prerequisites
+## 1. Mac M1 / Linux 本地准备
 
-PaddlePaddle 3.2.0 ships a macOS 11+ ARM64 wheel for CPython 3.12 (and versions 3.9–3.13). The preferred starting point for a MacBook M1 is a **native Python 3.12 ARM64 virtual environment**, not a Docker stack or GPU service.
+安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 并确认 `uv --version`。uv 会安装与 CPU 架构匹配的 Python 3.12，不必覆盖 Mac 系统 Python。
 
-References:
-- PaddlePaddle release wheel inventory: https://pypi.org/project/paddlepaddle/3.2.0/
-- PaddlePaddle official install: https://www.paddleocr.ai/main/en/version3.x/paddlepaddle_installation.html
-- PaddleOCR quick start and supported inference engines: https://www.paddleocr.ai/latest/en/quick_start.html
+```bash
+cd ~/repos/poster-agent
+uv python install 3.12
+uv sync --locked
+uv run --locked python -m scripts.ocr_probe
+```
 
-Do not assume Python 3.14 has a matching PaddlePaddle 3.2.0 ARM64 wheel. If running Python 3.14, create a fresh Python 3.12 environment; do not replace your existing development environment.
+这一步只做 **NOT_RUN** 环境诊断，没有模型推理，也不测 OCR 准确率。
 
-## Mac M1: verified installation *instructions* (not yet verified on your device)
+需要真正加载 OCR 时，先加入锁定的可选 PaddleOCR 包，然后从官方 CPU 索引安装 PaddlePaddle 3.2.0：
 
-Open Terminal in poster-agent:
+```bash
+uv sync --locked --extra ocr
+uv pip install --python .venv/bin/python paddlepaddle==3.2.0 \
+  --index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
+uv run --no-sync python -c 'import platform,paddle,paddleocr; print(platform.machine(), paddle.__version__, paddleocr.__version__)'
+```
 
-    uname -m
-    python3.12 --version
+Mac M1 请确认官方有对应的 ARM64 wheel。若平台不支持或初始化失败，属于 **UNAVAILABLE/ERROR**，不能宣称模型已成功运行。PaddlePaddle CPU 引擎单独装于 uv 环境，不属于默认锁依赖；后续用 `uv run --no-sync`，避免同步覆盖这个非默认包。
 
-Expected architecture is arm64; Python 3.12 must be installed. If `python3.12` is missing, install an ARM64 CPython 3.12 interpreter using your normal package manager.
+## 2. 在一张真实 PNG 上执行推理
 
-    python3.12 -m venv .venv-ocr
-    source .venv-ocr/bin/activate
-    python -m pip install --upgrade pip
-    python -m pip install -r requirements-dev.txt
-    python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-    python -m pip install -r requirements-ocr.txt
+```bash
+uv run --no-sync python -m scripts.generate_demo
+uv run --no-sync python -m scripts.ocr_probe \
+  --infer --image data/examples/sample_preview.png
+```
 
-If that index is unreachable, check the official package / PyPI instructions and try a compatible wheel. Do not switch to an unrelated architecture automatically.
+输出 `data/eval_runs/ocr_probe.json`，记录 Python、架构、Paddle/PaddleOCR 包版本、图片 SHA-256、像素尺寸、是否完成 OCR 调用、耗时和识别行数。
 
-Check:
+若有明确需要保存真实识别文本和坐标框，可以额外加 `--include-text`；识别文字可能涉及客户隐私，不要上传到公开仓库。无 `--infer` 的 `NOT_RUN` 不算推理。
 
-    python -c 'import platform,sys; print(platform.machine(),sys.version)'
-    python -c 'import paddle, paddleocr; print(paddle.__version__,paddleocr.__version__)'
+## 3. 20 张程序生成 PNG 的批量实验
 
-The first PaddleOCR model invocation may download weights. Cache and model artifacts can be large; network and memory constraints apply.
+```bash
+uv run --no-sync python -m scripts.run_image_benchmark --ocr paddle
+```
 
-**The source branch and CI cannot access your personal Mac.** These steps must be run locally.
+`data/eval_runs/m3b_images_paddle/` 保存程序生成的 PNG、`image_benchmark_summary.json`、`image_benchmark_cases.csv` 以及含原始 OCR 文本的 `ocr_observations.jsonl`。这是**程序合成图的真实模型推理**，不是客户商品数据集的准确率。
 
-## Phase A: diagnostic only — no model
+`--ocr none` 则只是离线回放，报告必须显示模型未执行。不要将两类实验的报告混用。
 
-    python -m scripts.ocr_probe
+## 4. 当前已有证据及下一步
 
-Produces `data/eval_runs/ocr_probe.json` with Python, CPU architecture and package versions. Its status is deliberately NOT_RUN. It does not download weights or report accuracy.
+独立的 GitHub Actions [Real PaddleOCR CPU run #39586650764](https://github.com/musuntana/poster-agent/actions/runs/39586650764) 已在 **Linux x86_64 CPU** 上真实执行 PaddleOCR 3.3.0（PaddlePaddle 3.2.0），一张程序海报得到 7 行、7 个文字框。这是 Linux 单图运行的记录，**不能证明 Mac M1 已完成推理**，也不能当作真实商用海报的 OCR 精度。
 
-## Phase B: run actual inference on a known PNG
+对真实 SKU，应先在网页生成海报、执行 Acceptance Gate 和独立人工标注，再用：
 
-    python -m scripts.generate_demo
-    python -m scripts.ocr_probe --infer --image data/examples/sample_preview.png
+```bash
+uv run --no-sync python -m scripts.evaluate_real_reports \
+  --annotations data/my-real-labels.csv \
+  --ocr-mode paddle \
+  --output-dir data/eval_runs/m3d_real
+```
 
-The default output `data/eval_runs/ocr_probe.json` contains:
-- runtime status OK / UNAVAILABLE / ERROR;
-- `model_invocation_completed` true only after the OCR adapter returns;
-- Paddle and PaddleOCR distribution versions and CPU architecture;
-- PNG dimensions, SHA-256 and byte length;
-- elapsed milliseconds, recognized line count and mean OCR confidence.
+保存并核对图片与报告的 SHA-256，分开记录空结果、缺少 OCR、人工不确定标签。默认 GitHub 快速 CI 不下载模型；真实 OCR 工作流只能手动触发。
 
-A non-OK inference exits nonzero (2), without inventing any model precision or score. OCR confidence measures the OCR engine's own estimate, **not ground-truth correctness**.
-
-To intentionally retain the raw text and bounding boxes, pass `--include-text`. These observations may contain customer data. They are written into the gitignored local data/eval_runs directory; do not post private data to a public issue.
-
-## Phase C: run real OCR over 20 rendered test PNGs
-
-Only after the single-image smoke test completes:
-
-    python -m scripts.run_image_benchmark --ocr paddle
-
-The runner generates code-rendered PNG images, calls the actual OCR adapter, scores against programmatically injected text defects and writes:
-- `data/eval_runs/m3b_images_paddle/image_benchmark_summary.json`
-- `data/eval_runs/m3b_images_paddle/image_benchmark_cases.csv`
-- `data/eval_runs/m3b_images_paddle/ocr_observations.jsonl` (recognized text, line scores, coordinates, per-image time)
-- `data/eval_runs/m3b_images_paddle/images/` (20 inputs and SHA manifest)
-
-This input set is still synthetic program-rendered images, not real customer posters. The output is useful for testing OCR setup and the detector's behavior on rendered text, not for claiming business accuracy.
-
-Offline `--ocr none` now writes to a **different folder** (`data/eval_runs/m3b_images/`) and never creates OCR observation traces.
-
-## Phase D: evaluate actual user-product images
-
-1. Upload real owned/licensed product images and brand materials.
-2. Generate real poster versions; record the source image.
-3. In Acceptance Gate, run PaddleOCR on the exported PNG.
-4. In **05 · 人工标注**, inspect the PNG and label title, price, CTA and any optional text fields.
-5. Export the reviewer-specific CSV and run:
-
-    python -m scripts.evaluate_real_reports --annotations data/my-real-labels.csv --ocr-mode paddle --output-dir data/eval_runs/m3d_real
-
-The real evaluator rejects missing/stale OCR reports and compares picture hashes. The human labels are user-supplied, not automatically audited.
-
-## CI scope
-
-The default lightweight CI does NOT install model weights or execute PaddleOCR. The separate manual-only `Real PaddleOCR CPU` GitHub Actions workflow **did successfully run genuine inference on Linux x86_64** (run #39586650764, 7 OCR lines and 7 bounding boxes on one program-rendered test image; model PaddleOCR 3.3.0). This is **not** a Mac M1 inference result or a real-business accuracy metric. See [M3g](m3g-real-ocr-actions.md).
-
-## Next milestone
-
-Once real OCR is working, collect at least 20 actual user-product posters with independent human review; identify cases where price or CTA fails. Then improve text segmentation or bounding-box aware price matching before adding VLM-as-Judge.
+官方：<https://www.paddleocr.ai/> · <https://docs.astral.sh/uv/concepts/projects/sync/>
