@@ -1,4 +1,4 @@
-# Poster Agent · M1 生图基础 + M2a 结构化编译 + M2b 持久化人工审核
+# Poster Agent · M1 生图基础 + M2a 编译 + M2b 审核恢复 + M2c 执行可靠性
 
 M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 → 精确合成文案/Logo → 预览 → 修改价格 → 保存版本 → 导出**。
 
@@ -28,6 +28,19 @@ M1 只实现一个真实闭环：**上传 SKU → 选择本地/真实 AI 背景 
 `data/checkpoints.sqlite3` 是本地状态数据库，不上传 GitHub。不要把这一版部署到公网：仍没有用户鉴权、跨进程锁、后台队列和生产级并发控制。
 
 详细步骤见 `docs/m2b-checkpoint.md`。
+
+## 新增：M2c 重复生成保护与执行记录
+
+浏览器现在为每次海报生成提交 `Idempotency-Key`，服务端使用 SQLite 保存请求状态。
+
+- 相同 Key + 相同素材与字段：若已完成，则复用相同结果。
+- 相同 Key + 不同素材/字段：HTTP 409，拒绝覆盖。
+- 正在执行或结果未知：HTTP 409，不自动再次调用收费生图模型。
+- 重启后将上次进程遗留的 RUNNING 任务标记为 UNKNOWN，供人工排查。
+- `GET /api/executions/{key}` 查询结构化事件记录。
+- Qwen Brief 提取只对明确 HTTP 429 限流响应进行一次额外尝试。
+
+**这仍是单机版本，不是生产级 exactly-once 或多租户系统。** 详细见 `docs/m2c-reliability.md`。
 
 ## 0. 环境
 
@@ -145,6 +158,6 @@ data/examples/       本地生成的教学样例（运行脚本生成）
 
 ## 后续路线
 
-M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：持久化任务治理和异常重试；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
+M2a：Brief Compiler（已完成）；M2b：Checkpoint + Interrupt/Resume（已完成单机版）；M2c：执行账本、收费生成防重复保护与限流重试（已提交）；M3：OCR + Brand Rules + VLM/Benchmark；M4：多规格派生；M5：PostgreSQL + Redis/Celery + Docker/账号与隔离；M6：消融实验、执行链路与成本监控。
 
 参见 `docs/learning-checklist.md`。
