@@ -22,6 +22,7 @@
 | 4:5 原生人工质量标注 | [m5c-native-human-review.md](m5c-native-human-review.md) | SKU、可读性、构图、文案的版本级独立审核/CSV |
 | 4:5 原生 OCR × 人工评测 | [m5d-native-evaluation.md](m5d-native-evaluation.md) | 独立报告/图片哈希核验、空间价格规则与弃判指标 |
 | 一键盘点原生 4:5 试验 | [m5e-native-trial.md](m5e-native-trial.md) | 审核 / OCR 缺口清单、不同 SKU 计数、显式评分与标签快照 |
+| OCR 环境证据与旧结果归档 | [m5f-evidence-run-safety.md](m5f-evidence-run-safety.md) | OCR 包版本/架构记录（非防伪）；评分产物归档与最新运行状态 |
 
 ## 证据边界
 
