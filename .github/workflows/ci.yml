@@ -33,5 +33,13 @@ jobs:
         run: python -m pytest -q
       - name: Replay synthetic OCR benchmark (no OCR model)
         run: python -m scripts.evaluate_acceptance --output-dir /tmp/poster-agent-benchmark
+      - name: Render 20 PNG fixtures and assert no-OCR abstention
+        run: python -m scripts.run_image_benchmark --ocr none
+      - name: Upload code-rendered PNG fixtures and offline benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3b-rendered-png-fixtures
+          path: data/eval_runs/m3b_images/
+          retention-days: 14
       - name: Generate deterministic demo
         run: python -m scripts.generate_demo
