@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -57,6 +58,10 @@ def _has_text(texts: list[str], expected: str) -> bool:
     # Do not substring-search across unrelated fields: "199" alone must not
     # accidentally be matched by a different number elsewhere in the poster.
     target = _norm(expected)
+    if target.startswith("¥"):
+        # A matching price must be a complete amount: ¥199 must not match ¥1990.
+        escaped = re.escape(target)
+        return any(re.search(r"(?<![0-9])" + escaped + r"(?![0-9])", _norm(line)) for line in texts)
     return any(target == _norm(line) or target in _norm(line) for line in texts)
 
 
@@ -84,7 +89,7 @@ def _field_checks(spec: PosterSpec, ocr_status: str, lines: list[dict]) -> list[
                 name="ocr_" + field,
                 status="PASS" if matched else "FAIL",
                 detail="OCR 文本匹配" if matched else "OCR 未匹配到期望文本，需人工复核是否识别误差",
-                evidence={"expected": value, "observed": texts[:35]},
+                evidence={"expected": value, "observed": texts[:35], "ocr_lines": lines[:35]},
             ))
     return out
 
