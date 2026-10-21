@@ -25,7 +25,7 @@
 <section class="mt"><h2>01 · 新建海报（先确认字段）</h2></section>
 <form id="createForm"><input type="hidden" name="review_run_id" value="">
 <div class="row"><label>商品图片（推荐透明 PNG）*</label><input type="file" name="product" accept="image/png,image/jpeg,image/webp" required></div>
-<p class="tip">图片支持 PNG/JPEG/WEBP；单张不超过 10 MiB，最多 1600 万像素，单边最长 8192 像素。上传后会旋正方向并移除 EXIF/文本元数据。</p>
+<p class="tip">图片支持 PNG/JPEG/WEBP；单张不超过 10 MiB，最多 1600 万像素，单边最长 8192 像素。上传后会旋正方向；若带有效 ICC 则先转换至 sRGB，再移除 EXIF/ICC/文本元数据。</p>
 <div class="row"><label>品牌 Logo（可选）</label><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></div>
 <div class="row"><label>主标题*</label><input name="title" required maxlength="35" value="双十一限时优惠"></div>
 <div class="row"><label>副标题</label><input name="subtitle" maxlength="45" value="智能清洁 · 品质生活"></div>
