@@ -1,6 +1,6 @@
 [project]
 name = "poster-agent"
-version = "0.4.4"
+version = "0.3.2"
 description = "Local-first ecommerce poster generation and quality evaluation"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
