@@ -19,6 +19,7 @@ from .schemas import PosterSpec, PosterEdit
 from .review_routes import router as review_router
 from .review_service import ReviewNotFound, get_run
 from .brief_routes import router as brief_router
+from .acceptance_routes import router as acceptance_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -29,9 +30,10 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Poster Agent M2c", version="0.2.2", lifespan=lifespan)
+app = FastAPI(title="Poster Agent M3a", version="0.3.0", lifespan=lifespan)
 app.include_router(brief_router)
 app.include_router(review_router)
+app.include_router(acceptance_router)
 MAX_UPLOAD = 10 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
 
@@ -62,7 +64,7 @@ async def home():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": "0.2.2"}
+    return {"ok": True, "version": "0.3.0"}
 
 
 def _fingerprint(spec: PosterSpec, product: Image.Image, logo: Image.Image | None) -> str:
