@@ -14,7 +14,7 @@ cd poster-agent
 uv python install 3.12
 uv sync --locked
 cp .env.example .env
-uv run --locked uv run --locked python -m scripts.generate_demo
+uv run --locked python -m scripts.generate_demo
 uv run --locked python -m pytest -q
 uv run --locked ruff check app scripts evals tests
 uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
