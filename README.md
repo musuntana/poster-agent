@@ -42,6 +42,8 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M4c 已新增独立 4:5 验收：** 可选对原生 1080×1350 PNG 执行真实 PaddleOCR，核查价格位置、标题和 CTA，并将报告绑定到当前 SKU、背景、Spec 与导出 PNG 的 SHA-256；默认无 OCR 时明确未验证，不继承方形版验收结果。详见 [M4c 说明](docs/m4c-native-acceptance.md)。
 
+**M5c 已新增原生 4:5 人工质量标注：** 在独立的 1080×1350 导出上审查商品完整度、可读性、构图及价格、标题、CTA。审核与原方图标签隔离，并绑定具体 PNG、源素材和规格 SHA-256；可导出专用 CSV，无法判断的标签不会被算作正确。详见 [M5c 说明](docs/m5c-native-human-review.md)。
+
 所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
 
 ## 常用操作
