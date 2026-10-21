@@ -13,6 +13,7 @@
 | 价格区域校验 | [m3e-ocr-price-position.md](m3e-ocr-price-position.md) | 1024×1024 固定模板的启发式区域验证 |
 | OCR 识别框叠加 | [m3f-ocr-visual-diagnostics.md](m3f-ocr-visual-diagnostics.md) | 图像证据可视化与导出 |
 | GitHub 真正 OCR 推理 | [m3g-real-ocr-actions.md](m3g-real-ocr-actions.md) | Linux CPU 手动模型验证及实验产物 |
+| 多渠道安全派生 | [m4a-channel-exports.md](m4a-channel-exports.md) | 4:5、9:16、16:9 PNG，无裁内容；非响应式重新排版 |
 
 ## 证据边界
 
