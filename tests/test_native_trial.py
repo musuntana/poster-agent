@@ -228,3 +228,93 @@ def test_invalid_reviewer_rejected_without_data_access(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
     with pytest.raises(ValueError, match="审核员"):
         audit_trial("../")
+
+
+def test_new_audit_archives_prior_success_instead_of_reusing_stale_metrics(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    output = tmp_path / "trial"
+    scored = run_trial(REVIEWER, output, score=True)
+    assert scored["ocr_text_labels"] == 5
+    saved = (output / "native_real_summary.json").read_bytes()
+    state = json.loads((output / "native_trial_readiness.json").read_text())
+    assert state["latest_score_status"] == "SCORED"
+
+    # Any future audit is a new run. Old metrics are history, not latest.
+    fresh = run_trial(REVIEWER, output)
+    assert fresh["latest_score_status"] == "AUDIT_ONLY"
+    assert fresh["trial_run_id"] != state["trial_run_id"]
+    assert not (output / "native_real_summary.json").exists()
+    assert not (output / "native_real_cases.csv").exists()
+    assert not (output / "native_trial_labels.csv").exists()
+    assert (output / fresh["previous_score_archive"] / "native_real_summary.json").read_bytes() == saved
+
+
+def test_new_blocked_score_does_not_leave_old_metrics_current(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    output = tmp_path / "trial"
+    run_trial(REVIEWER, output, score=True)
+    assert (output / "native_real_summary.json").is_file()
+
+    # Version v2 has an operator label but NO corresponding PaddleOCR result.
+    r = client.post(f"/api/posters/{pid}/revisions", json={"price": "189"})
+    assert r.status_code == 201
+    _review(pid, 2)
+    with pytest.raises(ValueError, match="未完成"):
+        run_trial(REVIEWER, output, score=True)
+
+    status = json.loads((output / "native_trial_readiness.json").read_text())
+    assert status["latest_score_status"] == "BLOCKED"
+    assert status["status_counts"]["OCR_MISSING"] == 1
+    assert not (output / "native_real_summary.json").exists()
+    assert (output / status["previous_score_archive"] / "native_real_summary.json").is_file()
+
+
+def test_failed_scorer_does_not_publish_partial_files(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    output = tmp_path / "trial"
+    def corrupt_score(*args, **kwargs):
+        from pathlib import Path
+        stage = Path(args[1])
+        (stage / "native_real_summary.json").write_text('{"fake": true}')
+        raise OSError("simulated disk or report error")
+    monkeypatch.setattr("evals.native_real_reports.evaluate_native_reports", corrupt_score)
+    with pytest.raises(OSError, match="simulated"):
+        run_trial(REVIEWER, output, score=True)
+    state = json.loads((output / "native_trial_readiness.json").read_text())
+    assert state["latest_score_status"] == "FAILED"
+    assert not (output / "native_real_summary.json").exists()
+    assert not (output / "native_real_cases.csv").exists()
+
+
+def test_mocked_plain_list_ocr_is_explicitly_unrecorded(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    report = client.get(
+        f"/api/posters/{pid}/versions/1/exports/feed_4x5_native/acceptance"
+        "?ocr_mode=paddle"
+    ).json()
+    assert report["ocr_runtime"] is None
+    assert report["ocr_runtime_evidence"] == "UNRECORDED"
+    state, _ = audit_trial(REVIEWER)
+    assert state["ready_versions"] == 1
+    assert state["ocr_adapter_runtime_unrecorded_versions"] == 1
+    assert state["ocr_runtime_attested"] is False
+    out = tmp_path / "score"
+    scored = run_trial(REVIEWER, out, score=True)
+    assert scored["ocr_runtime_unrecorded_versions"] == 1
+    assert scored["ocr_runtime_attested"] is False

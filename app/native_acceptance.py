@@ -108,6 +108,7 @@ def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
         dimension = image.copy()
 
     ocr_status = "NOT_RUN"
+    ocr_runtime = None
     lines: list[dict] = []
     if ocr_mode == "paddle":
         with tempfile.TemporaryDirectory(prefix="poster-native-ocr-") as directory:
@@ -115,6 +116,10 @@ def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
             path.write_bytes(png)
             try:
                 lines = recognize(path)
+                # A real adapter returns OCRLines with diagnostic package and
+                # platform details. Legacy/mock providers return plain lists.
+                # Lack of telemetry must stay visible, never imply authenticity.
+                ocr_runtime = getattr(lines, "runtime", None)
                 ocr_status = "OK"
             except OCRUnavailable:
                 ocr_status = "UNAVAILABLE"
@@ -139,6 +144,8 @@ def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
         "native_image_sha256": _sha(png),
         "image_dimensions": [WIDTH, HEIGHT],
         "ocr_mode": ocr_mode, "ocr_status": ocr_status,
+        "ocr_runtime": ocr_runtime,
+        "ocr_runtime_evidence": "RECORDED" if ocr_runtime else "UNRECORDED",
         "checks": [check.model_dump(mode="json") for check in checks],
         "auto_checks": auto_checks,
         "verdict": "BLOCKED" if auto_checks == "FAIL" else "REVIEW_REQUIRED",
