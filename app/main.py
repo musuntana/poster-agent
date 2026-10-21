@@ -15,6 +15,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 from . import storage, execution_store
 from .compositor import compose, local_background
+from .color_management import InvalidColorProfile, normalize_upload_color
 from .image_provider import generate_ai_background, ImageProviderError
 from .schemas import PosterSpec, PosterEdit
 from .review_routes import router as review_router
@@ -71,15 +72,18 @@ async def read_upload(upload: UploadFile, *, required: bool = True) -> Image.Ima
                 if width < 64 or height < 64:
                     raise ValueError("图片太小")
                 image.load()
-                # Normalize orientation and pixel mode, then strip any
-                # EXIF/ICC/XMP/tEXt metadata before the image can be persisted.
-                normalized = ImageOps.exif_transpose(image).convert("RGBA")
-                normalized.info.clear()
-                return normalized
+                # Capture ICC before EXIF transpose, perform profile-aware
+                # conversion to sRGB, then discard all original metadata.
+                # Removing ICC without conversion can alter SKU/brand colors.
+                source_icc = image.info.get("icc_profile")
+                oriented = ImageOps.exif_transpose(image)
+                return normalize_upload_color(oriented, source_icc)
     except HTTPException:
         raise
     except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=413, detail="图片解码像素超出安全限制") from exc
+    except InvalidColorProfile as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="请上传有效的 PNG/JPG/WEBP 图片（尺寸至少 64×64）") from exc
 
