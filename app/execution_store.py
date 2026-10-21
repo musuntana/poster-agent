@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ def _validate(key: str) -> None:
         raise InvalidExecutionKey("Idempotency-Key 只能包含 8-128 位字母、数字、下划线和短横线")
 
 
+@contextmanager
 def _connect():
     path = Path(os.getenv("POSTER_EXECUTION_DB", "data/executions.sqlite3")).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,7 +58,11 @@ def _connect():
             FOREIGN KEY(idempotency_key) REFERENCES poster_executions(idempotency_key)
         )
     """)
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def _time() -> str:
@@ -146,3 +152,24 @@ def get(key: str) -> dict:
             "updated_at": row["updated_at"],
             "events": [dict(event) for event in event_rows],
         }
+
+
+def recover_incomplete() -> int:
+    """Single-worker startup reconciliation: orphaned RUNNING → UNKNOWN.
+
+    No automatic retry: server may have called a paid model before crashing.
+    Must only be used at startup of a SINGLE worker, never alongside active workers.
+    """
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            "SELECT idempotency_key FROM poster_executions WHERE status='RUNNING'"
+        ).fetchall()
+        for row in rows:
+            key = row["idempotency_key"]
+            conn.execute(
+                "UPDATE poster_executions SET status='UNKNOWN',updated_at=? "
+                "WHERE idempotency_key=? AND status='RUNNING'", (_time(), key)
+            )
+            _event(conn, key, "RECOVERED_AS_UNKNOWN")
+        return len(rows)
