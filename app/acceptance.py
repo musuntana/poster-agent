@@ -17,6 +17,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from app.ocr_provider import OCRExecutionError, OCRUnavailable, recognize
+from app.ocr_price_layout import assess_price_zones
 from app.schemas import PosterSpec, price_text
 from app import storage
 
@@ -164,7 +165,13 @@ def evaluate(poster_id: str, version: int, mode: OcrMode) -> dict:
         except OCRExecutionError:
             ocr_status = "ERROR"
 
-    checks = _rule_checks(spec, image, logo_present) + _field_checks(spec, ocr_status, lines)
+    # Keep existing OCR text checks for compatibility, but require additional
+    # spatial evidence before calling the whole gate PASS. A correct number
+    # at the wrong place (or with no bbox) is not proof of a correct price.
+    checks = (_rule_checks(spec, image, logo_present)
+              + _field_checks(spec, ocr_status, lines)
+              + [Check.model_validate(result) for result in
+                 assess_price_zones(spec, ocr_status, lines)])
     states = {c.status for c in checks}
     overall = "FAIL" if "FAIL" in states else "INCOMPLETE" if "UNVERIFIED" in states else "PASS"
     report = AcceptanceReport(
