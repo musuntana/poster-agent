@@ -48,7 +48,7 @@ GET 读取时重新核实当前版本、素材和重新渲染的输出摘要，�
 ## 本阶段验证
 
 ```bash
-python -m pytest -q tests/test_native_acceptance.py tests/test_native_feed.py tests/test_ocr_price_layout.py
+uv run --locked python -m pytest -q tests/test_native_acceptance.py tests/test_native_feed.py tests/test_ocr_price_layout.py
 ```
 
 核心回归：原生 PNG 尺寸确实为 1080×1350；OCR 适配器拿到真正渲染的原生图片；活动价、原价在新区域的 PASS 与颠倒时的 FAIL；无 OCR/未安装模型不冒充 PASS；版本不串用；保存的源 SKU/背景/价格和实际导出摘要被绑定到报告；读取报告不会再次运行 OCR，也不调用 Qwen；变更素材或版本规格后旧报告返回 409。
