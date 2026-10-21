@@ -73,6 +73,17 @@
 <div class="actions"><button id="checkNative" class="secondary" type="button" disabled>检查当前 4:5 导出</button><span id="nativeGateStatus" class="tip">选择原生 4:5 并生成海报后可检查。</span></div>
 <pre id="nativeGateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;max-height:240px;overflow:auto">未检查该导出版本</pre>
 <p class="tip">此报告只适用于 1080×1350 原生版，不会继承方形版的质量结论。即使文字 OCR PASS，商品保真、品牌与投放规范也必须人工检查。</p>
+<div id="nativeHumanPanel">
+  <h3>4:5 原生海报人工验收</h3>
+  <p class="tip">请对照上面的原生导出预览检查商品是否完整、文字是否可读、构图与具体文案。每条标签绑定当前 4:5 PNG、商品与背景 SHA-256。此审核与下方方形版标注完全分开。</p>
+  <div class="row"><label>4:5 审核员代号</label><input id="nativeReviewer" value="local-operator" maxlength="40"></div>
+  <div id="nativeReviewFields"></div>
+  <div class="actions">
+    <button type="button" id="saveNativeReview" class="secondary" disabled>保存 4:5 人工验收</button>
+    <a id="exportNativeReview" href="#" download="poster-native-4x5-labels.csv">导出该审核员 4:5 CSV</a>
+  </div>
+  <p class="tip" id="nativeReviewStatus">生成原生 4:5 海报后可审核。</p>
+</div>
 </section>
 <section class="mt">
 <h2>05 · Acceptance Gate（自动验收）</h2>
@@ -223,6 +234,105 @@ $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
 function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+let nativeReviewContext=null;
+const NATIVE_VISUAL_LABELS={
+  sku_integrity:'商品完整/无遮挡',text_legibility:'整体文字可读性',composition:'画面构图与层次',
+  title:'主标题',price:'活动价',cta:'CTA',subtitle:'副标题',original_price:'原价'
+};
+$('nativeReviewer').value=localStorage.getItem('poster-native-reviewer')||'local-operator';
+function nativeHumanUrl(posterId,version){
+  return '/api/posters/'+posterId+'/versions/'+version+'/exports/feed_4x5_native/human-review';
+}
+function nativeReviewExportUrl(){
+  $('exportNativeReview').href='/api/annotations/native-4x5/export.csv?reviewer='+
+    encodeURIComponent($('nativeReviewer').value.trim());
+}
+async function loadNativeReviewContext(){
+  nativeReviewContext=null;
+  $('saveNativeReview').disabled=true;
+  $('nativeReviewFields').replaceChildren();
+  nativeReviewExportUrl();
+  if(!current || $('channelPreset').value!=='feed_4x5_native'){
+    $('nativeHumanPanel').classList.add('hidden');
+    return;
+  }
+  $('nativeHumanPanel').classList.remove('hidden');
+  const posterId=current.poster_id,version=current.version,reviewer=$('nativeReviewer').value.trim();
+  $('nativeReviewStatus').textContent='正在读取实际 4:5 海报的摘要…';
+  try{
+    const url=nativeHumanUrl(posterId,version)+'?reviewer='+encodeURIComponent(reviewer);
+    const response=await fetch(url);
+    const info=await response.json();
+    if(!response.ok)throw Error(errorText(info));
+    if(!current || current.poster_id!==posterId || current.version!==version ||
+       $('channelPreset').value!=='feed_4x5_native' || reviewer!==$('nativeReviewer').value.trim())return;
+    nativeReviewContext=info;
+    for(const key of info.fields_to_review){
+      const row=document.createElement('div');
+      row.className='row';
+      row.dataset.nativeField=key;
+      const label=document.createElement('label');
+      label.textContent=NATIVE_VISUAL_LABELS[key]||key;
+      const select=document.createElement('select');
+      select.dataset.judgment='1';
+      for(const [value,title] of [
+        ['','请选择'],['correct','图片正确'],['defective','图片有缺陷'],['unsure','无法判断']
+      ]){const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option);}
+      const reason=document.createElement('input');
+      reason.dataset.reason='1';reason.maxLength=300;reason.placeholder='错误位置 / 理由（可选）';
+      const existing=info.existing_review?.fields?.[key];
+      if(existing){select.value=existing.judgment;reason.value=existing.reason||'';}
+      row.append(label,select,reason);
+      $('nativeReviewFields').append(row);
+    }
+    $('nativeReviewStatus').textContent='v'+version+' · '+info.review_count+
+      ' 条原生人工审核记录（'+info.distinct_reviewers+' 位代号）；不自动放行';
+    $('saveNativeReview').disabled=false;
+  }catch(e){$('nativeReviewStatus').textContent='无法读取 4:5 审核上下文：'+e.message;}
+}
+$('nativeReviewer').addEventListener('change',()=>{
+  localStorage.setItem('poster-native-reviewer',$('nativeReviewer').value.trim());
+  loadNativeReviewContext();
+});
+$('saveNativeReview').addEventListener('click',async()=>{
+  if(!current || !nativeReviewContext || $('channelPreset').value!=='feed_4x5_native')return;
+  const posterId=current.poster_id,version=current.version;
+  const fields={};
+  for(const row of $('nativeReviewFields').querySelectorAll('[data-native-field]')){
+    const key=row.dataset.nativeField;
+    const judgment=row.querySelector('[data-judgment]').value;
+    if(!judgment){$('nativeReviewStatus').textContent='请审核所有显示的字段：'+(NATIVE_VISUAL_LABELS[key]||key);return;}
+    fields[key]={judgment,reason:row.querySelector('[data-reason]').value.trim()};
+  }
+  $('saveNativeReview').disabled=true;
+  try{
+    const response=await fetch(nativeHumanUrl(posterId,version),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        reviewer:$('nativeReviewer').value.trim(),fields,
+        image_sha256:nativeReviewContext.image_sha256,
+        source_image_sha256:nativeReviewContext.source_image_sha256,
+        spec_sha256:nativeReviewContext.spec_sha256,
+        asset_sha256:nativeReviewContext.asset_sha256
+      })
+    });
+    const result=await response.json();
+    if(!response.ok)throw Error(errorText(result));
+    if(current?.poster_id===posterId&&current?.version===version&&
+       $('channelPreset').value==='feed_4x5_native'){
+      $('nativeReviewStatus').textContent='已保存 4:5 审核 '+result.review_id+'；后续更正会新增记录';
+      $('nativeReviewStatus').className='tip good';
+    }
+  }catch(e){
+    $('nativeReviewStatus').textContent='4:5 审核失败：'+e.message;
+    $('nativeReviewStatus').className='tip bad';
+  }finally{
+    if(current?.poster_id===posterId&&current?.version===version&&nativeReviewContext)
+      $('saveNativeReview').disabled=false;
+  }
+});
+nativeReviewExportUrl();
+
 function updateChannelExport(){
   if(!current)return;
   const preset=$('channelPreset').value;
@@ -242,6 +352,7 @@ function updateChannelExport(){
   $('checkNative').disabled=preset!=='feed_4x5_native';
   $('nativeGateStatus').textContent='尚未检查当前 v'+current.version+' 的原生 4:5 导出';
   $('nativeGateResult').textContent='未检查该导出版本';
+  loadNativeReviewContext();
 }
 $('channelPreset').addEventListener('change',updateChannelExport);
 $('checkNative').addEventListener('click', async () => {

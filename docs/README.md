@@ -19,6 +19,7 @@
 | 4:5 原生图独立验收 | [m4c-native-acceptance.md](m4c-native-acceptance.md) | 专用 OCR/价格坐标、源资产与导出哈希绑定，不自动放行 |
 | 商品图与 Logo 上传保护 | [m5a-upload-safety.md](m5a-upload-safety.md) | 解码前像素/尺寸限制、EXIF 旋正、元数据清理 |
 | 商品图 ICC → sRGB 处理 | [m5b-color-management.md](m5b-color-management.md) | Pillow ImageCms 色彩转换、Alpha 保留、无效 ICC 拒绝 |
+| 4:5 原生人工质量标注 | [m5c-native-human-review.md](m5c-native-human-review.md) | SKU、可读性、构图、文案的版本级独立审核/CSV |
 
 ## 证据边界
 
