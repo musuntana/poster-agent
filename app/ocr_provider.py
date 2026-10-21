@@ -1,6 +1,6 @@
 """Optional PaddleOCR 3.x adapter. Never claim OCR was performed when unavailable.
 
-Install separately: see docs/m3a-acceptance.md. CI injects a fake adapter, so it
+Install separately: see docs/uv-workflow.md. CI injects a fake adapter, so it
 does not download large OCR weights.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ def _engine():
     try:
         from paddleocr import PaddleOCR
     except (ImportError, OSError) as exc:
-        raise OCRUnavailable("PaddleOCR 未安装或推理依赖不可用，参见 docs/m3a-acceptance.md") from exc
+        raise OCRUnavailable("PaddleOCR 未安装或推理依赖不可用，参见 docs/uv-workflow.md") from exc
     try:
         return PaddleOCR(
             lang="ch",
