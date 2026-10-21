@@ -33,6 +33,8 @@ jobs:
         run: python -m pytest -q
       - name: Replay synthetic OCR benchmark (no OCR model)
         run: python -m scripts.evaluate_acceptance --output-dir /tmp/poster-agent-benchmark
+      - name: OCR environment diagnostic (NO model inference)
+        run: python -m scripts.ocr_probe --output /tmp/ocr_runtime_diagnosis.json
       - name: Render 20 PNG fixtures and assert no-OCR abstention
         run: python -m scripts.run_image_benchmark --ocr none
       - name: Upload code-rendered PNG fixtures and offline benchmark
