@@ -137,3 +137,28 @@ def test_native_variant_rejects_overflowing_subtitle(tmp_path, monkeypatch, prod
     r = client.get(f"/api/posters/{pid}/versions/2/exports/feed_4x5_native")
     assert r.status_code == 422
     assert "副标题" in r.json()["detail"]
+
+
+def test_empty_subtitle_does_not_reserve_unneeded_vertical_space(monkeypatch):
+    """Optional subtitle must not block a title that otherwise fits its region."""
+    from PIL import ImageDraw
+    from app import native_layout
+
+    product = Image.new("RGBA", (300, 450), (160, 130, 120, 255))
+    bg = Image.new("RGB", (1024, 1024), (70, 80, 100))
+    original = native_layout._title_lines
+
+    def four_line_title(draw, text):
+        font, _, step = original(draw, text)
+        # A title occupying four rows may leave no space for an optional subtitle.
+        return font, ["商品优惠"] * 4, step
+
+    monkeypatch.setattr(native_layout, "_title_lines", four_line_title)
+    spec = PosterSpec(title="商品优惠", subtitle="", price="199")
+    output = render_native_feed(spec, product, None, bg)
+    assert Image.open(io.BytesIO(output)).size == (WIDTH, HEIGHT)
+
+    with_subtitle = spec.model_copy(update={"subtitle": "额外说明"})
+    import pytest
+    with pytest.raises(ValueError, match="副标题"):
+        render_native_feed(with_subtitle, product, None, bg)
