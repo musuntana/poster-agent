@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Poster Agent · M4c</title>
+<title>Poster Agent · M5h</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<header><h1>Poster Agent · M4c</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
+<header><h1>Poster Agent · M5h</h1><p class="sub">真实商品素材 + AI／本地背景 + 确定性文字图层 · 单机学习版</p></header>
 <main class="shell">
 <section class="panel">
 <h2>00 · 自然语言 Brief（可恢复审核）</h2>
@@ -40,6 +40,15 @@
 <p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
 </section>
 <section class="panel">
+<section id="trialQueue" style="margin-bottom:24px">
+<h2>本地 4:5 验收队列</h2>
+<p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
+<div class="actions">
+<button id="loadReviewQueue" class="secondary" type="button">刷新本地验收队列</button>
+<span id="reviewQueueStatus" class="tip">按需读取本地状态；不会自动执行 OCR 或模型。</span>
+</div>
+<div id="reviewQueueItems" style="margin-top:12px;max-height:360px;overflow:auto"></div>
+</section>
 <h2>02 · 预览与修改</h2>
 <span class="tag" id="source">尚未生成</span><br>
 <img id="preview" class="preview" alt="生成海报预览">
@@ -234,6 +243,62 @@ $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
 function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+const QUEUE_STATUS_LABELS={
+  NEEDS_REVIEW:'待人工审核',REVIEW_UNSURE:'人工无法判断',
+  OCR_MISSING:'缺 OCR 报告',OCR_NOT_OK:'OCR 未成功',OCR_STALE:'OCR 报告过期',
+  OCR_CHECKS_INVALID:'OCR 证据不完整',REVIEW_STALE:'人工审核过期',
+  SOURCE_INVALID:'源素材/版本异常',READY:'可评分（非投放批准）'
+};
+$('loadReviewQueue').addEventListener('click',async()=>{
+  const button=$('loadReviewQueue');
+  const reviewer=$('nativeReviewer').value.trim();
+  button.disabled=true;
+  $('reviewQueueStatus').textContent='正在盘点已保存的原生版本；不会触发 OCR…';
+  $('reviewQueueItems').replaceChildren();
+  try{
+    const response=await fetch('/api/trials/review-queue?reviewer='+encodeURIComponent(reviewer));
+    const data=await response.json();
+    if(!response.ok)throw Error(errorText(data));
+    if(reviewer!==$('nativeReviewer').value.trim())return;
+    $('reviewQueueStatus').textContent='共 '+data.total_posters+
+      ' 张海报（含 '+data.total_versions_in_cohort+' 个历史版本），按待处理状态排序。';
+    for(const item of data.items){
+      const row=document.createElement('div');
+      row.className='actions';
+      row.style.cssText='border-top:1px solid #2c4056;padding:10px 0;justify-content:space-between';
+      const text=document.createElement('div');
+      text.style.cssText='flex:1;min-width:170px';
+      const label=document.createElement('div');
+      label.textContent=item.title+' · v'+item.version;
+      const hint=document.createElement('div');
+      hint.className='tip';
+      hint.textContent=(QUEUE_STATUS_LABELS[item.status]||item.status)+
+        ' · '+item.action;
+      text.append(label,hint);
+      const open=document.createElement('button');
+      open.type='button';open.className='secondary';open.textContent='打开审核';
+      open.addEventListener('click',async()=>{
+        open.disabled=true;
+        try{
+          const res=await fetch(item.poster_url);
+          const poster=await res.json();
+          if(!res.ok)throw Error(errorText(poster));
+          if(poster.version!==item.version)
+            throw Error('该海报已有新版本，请刷新队列');
+          $('channelPreset').value='feed_4x5_native';
+          display(poster);
+          $('preview').scrollIntoView({behavior:'smooth',block:'start'});
+          $('reviewQueueStatus').textContent='已打开 '+item.title+' · v'+item.version+
+            '；请核对原生 4:5 预览后进行人工标注。';
+        }catch(e){$('reviewQueueStatus').textContent='打开失败：'+e.message;}
+        finally{open.disabled=false;}
+      });
+      row.append(text,open);
+      $('reviewQueueItems').append(row);
+    }
+  }catch(e){$('reviewQueueStatus').textContent='读取队列失败：'+e.message;}
+  finally{button.disabled=false;}
+});
 let nativeReviewContext=null;
 const NATIVE_VISUAL_LABELS={
   sku_integrity:'商品完整/无遮挡',text_legibility:'整体文字可读性',composition:'画面构图与层次',
