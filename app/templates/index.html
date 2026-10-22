@@ -259,8 +259,19 @@ function parseBatchReviewJournal(raw){
   if(!data || data.schema_version!=='m5g-1' || data.mode!=='apply' ||
      !BATCH_SHA.test(data.manifest_sha256) || !data.rows ||
      typeof data.rows!=='object' || Array.isArray(data.rows))throw Error('不是有效的 M5g 已导入结果 JSON');
+  // Mirror the M5k server-side completeness gate. A partial import journal
+  // must not appear as a complete batch in the human review interface.
+  const expected=data.expected_sku_ids;
+  if(data.completed!==true || !Number.isInteger(data.expected_sku_count) ||
+     data.expected_sku_count<1 || data.expected_sku_count>100 ||
+     !Array.isArray(expected) || expected.length!==data.expected_sku_count ||
+     expected.some(sku=>typeof sku!=='string'||!BATCH_SKU.test(sku)) ||
+     new Set(expected).size!==expected.length)
+    throw Error('批次尚未完整导入；请重新运行 M5g --apply 后再选择账本');
   const entries=Object.entries(data.rows);
-  if(entries.length<1 || entries.length>100)throw Error('批次记录需要包含 1–100 个商品');
+  if(entries.length!==expected.length ||
+     entries.some(([sku])=>!expected.includes(sku)))
+    throw Error('批次导入记录与预期 SKU 清单不一致，拒绝缩小审核范围');
   const seen=new Set(), scoped=new Map();
   for(const [sku, record] of entries){
     if(!BATCH_SKU.test(sku) || !record || !BATCH_POSTER_ID.test(record.poster_id) ||
