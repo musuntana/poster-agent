@@ -78,9 +78,9 @@ def render_native_feed(
         draw.text((TEXT_LEFT, TITLE_TOP + index*step), line,
                   font=font, fill="#FFFFFF")
     subtitle_y = TITLE_TOP + len(lines)*step + 19
-    if subtitle_y + 50 > TITLE_BOTTOM:
-        raise ValueError("副标题没有足够的 4:5 排版空间")
     if spec.subtitle:
+        if subtitle_y + 50 > TITLE_BOTTOM:
+            raise ValueError("副标题没有足够的 4:5 排版空间")
         subtitle_font = _fit_text(draw, spec.subtitle, TEXT_WIDTH,
                                   max_size=28, min_size=18)
         # Fail rather than writing off-screen when a very long subtitle exists.
