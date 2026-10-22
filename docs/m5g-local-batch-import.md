@@ -65,6 +65,8 @@ http://127.0.0.1:8000/api/posters/<poster_id>/versions/1/exports/feed_4x5_native
 
 完成导入会输出 `batch_import_results.json`，记录 `sku_id → poster_id`、版本号、请求 SHA、原素材 SHA 和幂等键。结果中不会保存原始图片字节，但应将这些文件视为私有运营数据，勿推到仓库。
 
+**M5k 完整性保护：** 导入结果还记录预期的 `expected_sku_ids`、`expected_sku_count` 和 `completed`。每导入一行就保存可恢复账本，但只有全部预期 SKU 成功处理后才标记 `completed=true`。途中终止的账本可续跑、不可直接用 M5j `--score` 当作完整批次。旧版没有这三个字段的结果需要用同一 CSV、同一执行账本和同一输出目录重新执行原 `--apply` 命令，确认复用已有 ID 并补齐完成标记；**不要手动改 JSON 标记完成**。本地记录仍不是签名证明。
+
 ## 4. 失败恢复与费用防护
 
 每个 SKU 都使用由 **CSV 绝对路径 + sku_id** 派生的稳定 `Idempotency-Key`，由现有 SQLite 执行账本保障同样请求不会重复创建。每成功一张，就原子保存本地批次清单。如果第 2/20 张失败，重新执行相同 `--apply` 能继续；已完成的 SKU 不会重复写入。若清单内容被修改、已记录的素材哈希改变、账本返回结果未知或者已成功的 `poster_id` 被手工删除，将明确报错并要求核对，**不隐式新建替代品**。
