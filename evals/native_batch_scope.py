@@ -33,7 +33,21 @@ def load_batch_scope(journal: Path) -> dict:
             not SHA.fullmatch(data["manifest_sha256"]):
         raise ValueError("仅接受 M5g 已执行 --apply 的有效批次结果")
 
+    # M5g writes an incomplete journal after each successful SKU so it can
+    # resume safely. A subset must NEVER masquerade as the full experiment.
+    # Older M5g journals need an idempotent --apply rerun to be finalized.
+    if data.get("completed") is not True:
+        raise ValueError("M5g 批次导入尚未完成；请重新运行原 --apply 命令补齐/确认")
+    expected = data.get("expected_sku_ids")
+    expected_count = data.get("expected_sku_count")
+    if type(expected_count) is not int or not 1 <= expected_count <= 100 or \
+            not isinstance(expected, list) or len(expected) != expected_count or \
+            any(not isinstance(sku, str) or not SKU.fullmatch(sku) for sku in expected) or \
+            len(set(expected)) != expected_count:
+        raise ValueError("M5g 预期 SKU 清单不合法，拒绝缩小评分分母")
     items = data["rows"]
+    if set(items) != set(expected):
+        raise ValueError("M5g 批次账本不完整，导入记录与预期 SKU 不一致")
     if not 1 <= len(items) <= 100:
         raise ValueError("批次必须包含 1–100 个实际导入的 SKU")
     sku_by_id: dict[str, str] = {}

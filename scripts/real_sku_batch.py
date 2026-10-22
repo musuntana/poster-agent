@@ -157,15 +157,36 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "batch_import_results.json"
+    expected_sku_ids = [item["sku_id"] for item in prepared]
     if apply and output.exists():
         state = json.loads(output.read_text(encoding="utf-8"))
         if state.get("manifest_sha256") != manifest_sha:
             raise BatchError("导入清单已经变化；请使用新批次目录，不允许覆盖已有记录")
+        if state.get("schema_version") != SCHEMA or state.get("mode") != "apply" or \
+                not isinstance(state.get("rows"), dict):
+            raise BatchError("现有批次账本结构不合法，拒绝续跑")
+        if set(state["rows"]) - set(expected_sku_ids):
+            raise BatchError("现有批次账本包含当前 CSV 之外的 SKU")
+        # Older M5g journals have no completion metadata. A safe --apply
+        # rerun can backfill it after checking all expected rows.
+        if "expected_sku_ids" in state and state["expected_sku_ids"] != expected_sku_ids:
+            raise BatchError("现有批次账本的预期 SKU 与当前 CSV 不一致")
+        if "expected_sku_count" in state and (
+            type(state["expected_sku_count"]) is not int or
+            state["expected_sku_count"] != len(expected_sku_ids)
+        ):
+            raise BatchError("现有批次账本的预期 SKU 数量不一致")
     else:
         state = {
             "schema_version": SCHEMA, "manifest_sha256": manifest_sha,
             "mode": "apply", "rows": {},
         }
+    if apply:
+        state["expected_sku_ids"] = expected_sku_ids
+        state["expected_sku_count"] = len(expected_sku_ids)
+        # Persist incomplete state after each SKU; only the final successful
+        # pass may publish a completed batch journal.
+        state["completed"] = False
 
     plan = {
         "schema_version": SCHEMA, "manifest_sha256": manifest_sha,
@@ -223,6 +244,10 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
             # response and this write, the existing execution ledger recovers
             # the same response on resume without another poster render.
             _write_json_atomic(output, state)
+    if set(state["rows"]) != set(expected_sku_ids):
+        raise BatchError("导入未覆盖全部预期 SKU，拒绝标记为完成")
+    state["completed"] = True
+    _write_json_atomic(output, state)
     return {**plan, "created_or_reused": len(state["rows"]),
             "poster_ids": {sku: row["poster_id"] for sku, row in state["rows"].items()}}
 

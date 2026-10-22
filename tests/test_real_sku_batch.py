@@ -10,6 +10,7 @@ from PIL import Image
 
 from app import storage
 from evals.native_trial import audit_trial
+from evals.native_batch_scope import load_batch_scope
 from scripts import real_sku_batch as batch
 
 
@@ -83,6 +84,12 @@ def test_apply_creates_two_local_posters_and_rerun_reuses_ids(
     assert first["created_or_reused"] == 2
     assert len(set(first["poster_ids"].values())) == 2
     assert len(list(storage.root().iterdir())) == 2
+    journal = json.loads((output / "batch_import_results.json").read_text())
+    assert journal["completed"] is True
+    assert journal["expected_sku_count"] == 2
+    assert journal["expected_sku_ids"] == ["sku-one", "sku-two"]
+    assert set(journal["rows"]) == set(journal["expected_sku_ids"])
+    assert load_batch_scope(output / "batch_import_results.json")["batch_sku_count"] == 2
     for poster in first["poster_ids"].values():
         meta = storage.view(poster)
         assert meta["spec"]["background_mode"] == "local"
@@ -112,13 +119,58 @@ def test_crash_after_first_row_then_resume_without_duplication(
     monkeypatch.setattr(batch, "_file_parts", broken_second)
     with pytest.raises(batch.BatchError, match="interruption"):
         batch.run_batch(manifest, output, apply=True)
-    state = json.loads((output / "batch_import_results.json").read_text())
+    journal = output / "batch_import_results.json"
+    state = json.loads(journal.read_text())
     assert len(state["rows"]) == 1
+    assert state["completed"] is False
+    assert state["expected_sku_count"] == 2
+    with pytest.raises(ValueError, match="尚未完成"):
+        load_batch_scope(journal)
+    # A forged completed=True flag cannot silently shrink the denominator.
+    journal.write_text(json.dumps({**state, "completed": True}), encoding="utf-8")
+    with pytest.raises(ValueError, match="不完整"):
+        load_batch_scope(journal)
+    journal.write_text(json.dumps(state), encoding="utf-8")
     poster = state["rows"]["sku-one"]["poster_id"]
     monkeypatch.setattr(batch, "_file_parts", original)
     result = batch.run_batch(manifest, output, apply=True)
     assert result["poster_ids"]["sku-one"] == poster
     assert len(list(storage.root().iterdir())) == 2
+    assert load_batch_scope(journal)["batch_sku_count"] == 2
+    assert json.loads(journal.read_text())["completed"] is True
+
+
+def test_old_complete_journal_requires_idempotent_refinalization(
+    batch_dir, tmp_path,
+):
+    manifest = _manifest(batch_dir, _rows())
+    output = tmp_path / "results"
+    first = batch.run_batch(manifest, output, apply=True)
+    path = output / "batch_import_results.json"
+    state = json.loads(path.read_text())
+    for key in ("completed", "expected_sku_ids", "expected_sku_count"):
+        state.pop(key)
+    path.write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(ValueError, match="尚未完成"):
+        load_batch_scope(path)
+
+    after = batch.run_batch(manifest, output, apply=True)
+    assert after["poster_ids"] == first["poster_ids"]
+    assert len(list(storage.root().iterdir())) == 2
+    assert load_batch_scope(path)["batch_sku_count"] == 2
+
+
+def test_resume_rejects_forged_or_foreign_expected_cohort(batch_dir, tmp_path):
+    manifest = _manifest(batch_dir, _rows())
+    output = tmp_path / "results"
+    batch.run_batch(manifest, output, apply=True)
+    path = output / "batch_import_results.json"
+    state = json.loads(path.read_text())
+    state["expected_sku_ids"] = ["sku-two", "sku-one"]
+    path.write_text(json.dumps(state), encoding="utf-8")
+    with pytest.raises(batch.BatchError, match="预期 SKU"):
+        batch.run_batch(manifest, output, apply=True)
+
 
 
 def test_lost_local_journal_recovers_from_existing_execution_ledger(

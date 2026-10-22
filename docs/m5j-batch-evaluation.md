@@ -28,6 +28,7 @@ uv run --locked python -m scripts.native_trial \
 规则如下：
 
 - 仅使用批次导入结果中 1–100 个合法 `sku_id → poster_id`；校验 `m5g-1`、`mode=apply`、记录摘要、幂等键、无重复海报 ID；拒绝伪造/格式错误的批次格式，但本地 JSON **不是签名来源证明**。
+- **M5k 修复：** 必须 `completed=true`，`expected_sku_count`、`expected_sku_ids` 与结果中的全部 SKU **完全对应**。导入只成功 2/20 张时不得将 2 张作为完整批次评分；旧版 M5g 日志缺少完成标记也会拒绝，需要原命令幂等续跑后补齐。仅复制/篡改本地 JSON 无法构成独立来源证明。
 - 每个 SKU **只选海报的当前最新版本**。如原 v1 改价后产生 v2，需要对 v2 重新人工审核、重新运行原生 OCR，不能借用 v1 的结果。
 - 缺少的海报 ID、源数据损坏、非 local 背景等明确标记为 `SOURCE_INVALID`，**不会从分母中悄悄剔除**。
 - 任意一个批次 SKU 没有确定性人工标签、缺少有效原生 OCR 或证据过期，则整个批次 `can_score=false`；有 `unsure` 的字段仍可弃判，但必须至少有可评测的 OCR 文字字段。

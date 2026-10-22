@@ -54,6 +54,8 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M5e 已提供本地评测盘点：** 使用 `uv run --locked python -m scripts.native_trial --reviewer local-operator` 自动找出未审核、缺真实 OCR 或报告过期的原生 4:5 版本；显式加入 `--score` 才会复用 M5d 生成指标和完整 CSV 标签快照。会提示不同商品素材数量不足，避免多个改价版本被误当成独立商品。参见 [M5e 试验手册](docs/m5e-native-trial.md)。
 
+**M5k 加固未完成批次检测：** M5g 导入账本写入预期 SKU 清单与最终完成状态，M5j 拒绝将中断后仅完成的部分 SKU 当作完整评测批次。旧 M5g 账本需幂等续跑补写完成状态，不增加 OCR/AI 调用。
+
 **M5j 已支持按导入批次独立评分：** 使用 `uv run --locked python -m scripts.native_trial --reviewer local-operator --batch-journal data/eval_runs/m5g_import/batch_import_results.json` 仅盘点本批次最新 SKU 版本；全批 READY 后显式 `--score`，结果附带批次账本 SHA 和 SKU 清单。缺一个样本也不会自动缩小分母。详见 [M5j 批次独立评测](docs/m5j-batch-evaluation.md)。
 
 **M5i 已支持按导入批次筛选审核队列：** 在现有 M5h 页面选择 M5g 的 `batch_import_results.json`，浏览器仅在内存中筛选对应 SKU，不上传该文件，也不改变全量 M5e 评分样本范围。详见 [M5i 本地批次筛选](docs/m5i-batch-review-scope.md)。
