@@ -39,7 +39,10 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
             latest = None
             if chosen is not None:
                 try:
-                    latest = storage.view(poster.name)["version"]
+                    current = storage.view(poster.name)
+                    if current["background_mode"] != "local":
+                        continue
+                    latest = current["version"]
                 except (OSError, ValueError, KeyError, TypeError, FileNotFoundError):
                     continue
             version_dir = poster / "versions"
