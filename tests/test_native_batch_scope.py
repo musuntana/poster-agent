@@ -80,6 +80,9 @@ def test_applied_journal_only_and_fail_closed_json(tmp_path):
     valid = {
         "schema_version": "m5g-1", "mode": "apply",
         "manifest_sha256": "1" * 64,
+        "expected_sku_count": 1,
+        "expected_sku_ids": ["sku-01"],
+        "completed": True,
         "rows": {"sku-01": {
             "poster_id": pid, "version": 1, "request_sha256": "2" * 64,
             "product_sha256": "3" * 64, "logo_sha256": None,
@@ -92,6 +95,11 @@ def test_applied_journal_only_and_fail_closed_json(tmp_path):
     changes = [
         {"mode": "check"},
         {"schema_version": "wrong"},
+        {"completed": False},
+        {"completed": "true"},
+        {"expected_sku_count": 2},
+        {"expected_sku_ids": ["sku-02"]},
+        {"expected_sku_ids": ["sku-01", "sku-01"], "expected_sku_count": 2},
         {"rows": {}},
         {"rows": {**valid["rows"], "sku-02": valid["rows"]["sku-01"]}},
         {"rows": {"sku-01": {**valid["rows"]["sku-01"], "request_sha256": "BAD"}}},
@@ -101,6 +109,14 @@ def test_applied_journal_only_and_fail_closed_json(tmp_path):
         path.write_text(json.dumps({**valid, **changed}), encoding="utf-8")
         with pytest.raises(ValueError):
             load_batch_scope(path)
+    # Legacy journals are not silently interpreted as complete. The importer
+    # can finalize them with an idempotent --apply rerun.
+    legacy = {key: value for key, value in valid.items() if key not in {
+        "expected_sku_count", "expected_sku_ids", "completed"
+    }}
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    with pytest.raises(ValueError, match="尚未完成"):
+        load_batch_scope(path)
     path.write_bytes(b"x" * 200001)
     with pytest.raises(ValueError, match="200 KB"):
         load_batch_scope(path)
