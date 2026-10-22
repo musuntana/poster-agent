@@ -26,6 +26,7 @@
 | 真实商品 CSV 安全导入 | [m5g-local-batch-import.md](m5g-local-batch-import.md) | 默认预检、显式 --apply、本地免费背景、执行账本与中断恢复 |
 | 本地原生 4:5 审核队列 | [m5h-local-review-queue.md](m5h-local-review-queue.md) | 最新版状态/标题、打开已有预览与人工审核；不运行 OCR |
 | 按 M5g 导入批次筛选审核队列 | [m5i-batch-review-scope.md](m5i-batch-review-scope.md) | 浏览器本地读取导入账本，SKU 级筛选已存在的审核队列 |
+| M5g 批次独立评测 | [m5j-batch-evaluation.md](m5j-batch-evaluation.md) | 指定导入账本，逐 SKU 最新版本评分，禁止外部海报污染分母 |
 
 ## 证据边界
 

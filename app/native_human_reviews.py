@@ -180,7 +180,9 @@ def submit(poster_id: str, version: int, payload: NativeReviewSubmission) -> dic
         return record
 
 
-def export(reviewer: str) -> tuple[str, dict]:
+def export(
+    reviewer: str, *, target_versions: dict[str, int] | None = None
+) -> tuple[str, dict]:
     if re.fullmatch(REVIEWER_PATTERN, reviewer) is None:
         raise ValueError("审核员代号不合法")
     rows, considered, uncertain = [], 0, 0
@@ -188,12 +190,18 @@ def export(reviewer: str) -> tuple[str, dict]:
         for poster in sorted(storage.root().glob("*")):
             if not poster.is_dir() or not VALID_ID.fullmatch(poster.name):
                 continue
+            # Scope at the storage layer so an unrelated stale human review
+            # cannot poison or contaminate a batch-only experiment.
+            if target_versions is not None and poster.name not in target_versions:
+                continue
             version_dir = poster / "versions"
             if not version_dir.is_dir():
                 continue
             for source in sorted(version_dir.glob("v[0-9]*.png")):
                 try:
                     version = int(source.stem[1:])
+                    if target_versions is not None and version != target_versions[poster.name]:
+                        continue
                     latest = _latest_reviews(_all_reviews(poster.name, version)).get(reviewer)
                     if latest is None:
                         continue

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from evals.native_trial import run_trial
+from evals.native_batch_scope import load_batch_scope
 
 
 def main() -> int:
@@ -22,9 +23,14 @@ def main() -> int:
                         default=Path("data/eval_runs/m5e_native_trial"))
     parser.add_argument("--score", action="store_true",
                         help="Score with existing M5d evaluator (requires complete valid reports)")
+    parser.add_argument("--batch-journal", type=Path,
+                        help="Optional M5g batch_import_results.json; score latest version of each SKU only")
     args = parser.parse_args()
     try:
-        summary = run_trial(args.reviewer, args.output_dir, score=args.score)
+        scope = load_batch_scope(args.batch_journal) if args.batch_journal else None
+        summary = run_trial(
+            args.reviewer, args.output_dir, score=args.score, batch_scope=scope
+        )
     except ValueError as exc:
         parser.exit(2, f"无法评分：{exc}\n缺口清单：{args.output_dir}/native_trial_manifest.csv\n")
     print(json.dumps(summary, ensure_ascii=False, indent=2))

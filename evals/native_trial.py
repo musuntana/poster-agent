@@ -22,16 +22,29 @@ from app.native_acceptance import StaleNativeEvidence, verified_report
 from evals.native_real_reports import OCR_FIELDS, _text_prediction
 
 
-def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
+def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict, list[dict]]:
     if not re.fullmatch(REVIEWER_PATTERN, reviewer):
         raise ValueError("审核员代号只能使用 2–40 位字母、数字、下划线和短横线")
     rows: list[dict] = []
+    chosen = batch_scope["sku_by_id"] if batch_scope is not None else None
     recorded = set()
     unrecorded = set()
     with storage.LOCK:
         for poster in sorted(storage.root().glob("*")):
             if not poster.is_dir() or not VALID_ID.fullmatch(poster.name):
                 continue
+            if chosen is not None and poster.name not in chosen:
+                continue
+            # One latest version per imported SKU; don't double-count revisions.
+            latest = None
+            if chosen is not None:
+                try:
+                    current = storage.view(poster.name)
+                    if current["background_mode"] != "local":
+                        continue
+                    latest = current["version"]
+                except (OSError, ValueError, KeyError, TypeError, FileNotFoundError):
+                    continue
             version_dir = poster / "versions"
             if not version_dir.is_dir():
                 continue
@@ -40,8 +53,11 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
                     version = int(source.stem[1:])
                 except ValueError:
                     continue
+                if chosen is not None and version != latest:
+                    continue
                 row = {
                     "poster_id": poster.name, "version": version,
+                    "sku_id": chosen[poster.name] if chosen is not None else "",
                     "status": "", "definite_labels": 0,
                     "ocr_text_labels": 0, "unsure_labels": 0,
                     "product_sha256": "", "native_image_sha256": "",
@@ -119,6 +135,18 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
                     row["action"] = "检查图片、规格与最新人工审核的哈希或 JSON 完整性"
                 rows.append(row)
 
+    if chosen is not None:
+        present = {row["poster_id"] for row in rows}
+        for pid in sorted(chosen.keys() - present):
+            rows.append({
+                "poster_id": pid, "version": 0, "sku_id": chosen[pid],
+                "status": "SOURCE_INVALID", "definite_labels": 0,
+                "ocr_text_labels": 0, "unsure_labels": 0,
+                "product_sha256": "", "native_image_sha256": "",
+                "action": "批次海报不存在、版本文件缺失或版本元数据不可用",
+            })
+        rows.sort(key=lambda item: (item["sku_id"], item["version"]))
+
     counts = Counter(row["status"] for row in rows)
     labeled = [row for row in rows if row["definite_labels"] > 0]
     ready = [row for row in labeled if row["status"] == "READY"]
@@ -127,6 +155,10 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
     can_score = bool(ready and with_text and len(ready) == len(labeled)) and not any(
         row["status"] in {"SOURCE_INVALID", "REVIEW_STALE"} for row in rows
     )
+    if chosen is not None:
+        can_score = can_score and len(rows) == len(chosen) and all(
+            row["status"] == "READY" for row in rows
+        )
     summary = {
         "schema_version": "1.0", "variant_id": "feed_4x5_native",
         "reviewer": reviewer, "source": "local_poster_versions",
@@ -150,6 +182,19 @@ def audit_trial(reviewer: str) -> tuple[dict, list[dict]]:
             "No independent proof of model inference or review accuracy."
         ),
     }
+    if batch_scope is not None:
+        summary.update({
+            "scope_mode": batch_scope["scope_mode"],
+            "source_batch_journal_sha256": batch_scope["source_batch_journal_sha256"],
+            "source_manifest_sha256": batch_scope["source_manifest_sha256"],
+            "batch_sku_count": batch_scope["batch_sku_count"],
+            "batch_unique_raw_product_sha256_count": batch_scope[
+                "batch_unique_raw_product_sha256_count"
+            ],
+            "cohort_requires_all_skus_ready": True,
+            "warning": summary["warning"] +
+                " The local M5g journal is not a signed image-origin certificate.",
+        })
     return summary, rows
 
 
@@ -159,7 +204,7 @@ def save_trial_audit(output_dir: Path, summary: dict, rows: list[dict]) -> None:
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     fields = [
-        "poster_id", "version", "status", "definite_labels",
+        "poster_id", "version", "sku_id", "status", "definite_labels",
         "ocr_text_labels", "unsure_labels", "product_sha256",
         "native_image_sha256", "action",
     ]
@@ -188,13 +233,16 @@ def _archive_previous_scores(output_dir: Path) -> str | None:
     return f"history/{name}"
 
 
-def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
+def run_trial(
+    reviewer: str, output_dir: Path, *, score: bool = False,
+    batch_scope: dict | None = None,
+) -> dict:
     """Readiness is default; --score stages results and exposes them only on success.
 
     Earlier results move to a versioned history folder, never silently remain
     at the root after a newer audit discovers missing or stale evidence.
     """
-    summary, rows = audit_trial(reviewer)
+    summary, rows = audit_trial(reviewer, batch_scope=batch_scope)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["trial_run_id"] = uuid4().hex
     summary["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -214,7 +262,11 @@ def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
     from evals.native_real_reports import evaluate_native_reports
 
     try:
-        csv_content, _meta = reviews.export(reviewer)
+        target_versions = ({row["poster_id"]: row["version"] for row in rows}
+                           if batch_scope is not None else None)
+        csv_content, _meta = reviews.export(
+            reviewer, target_versions=target_versions
+        )
         with TemporaryDirectory(prefix=".score-staging-", dir=output_dir) as tmp:
             staged = Path(tmp)
             labels_path = staged / "native_trial_labels.csv"
@@ -224,6 +276,24 @@ def run_trial(reviewer: str, output_dir: Path, *, score: bool = False) -> dict:
             result["ready_distinct_product_sha256_count"] = summary[
                 "ready_distinct_product_sha256_count"
             ]
+            if batch_scope is not None:
+                result.update({
+                    "scope_mode": batch_scope["scope_mode"],
+                    "source_batch_journal_sha256": batch_scope["source_batch_journal_sha256"],
+                    "source_manifest_sha256": batch_scope["source_manifest_sha256"],
+                    "batch_sku_count": batch_scope["batch_sku_count"],
+                    "batch_unique_raw_product_sha256_count": batch_scope[
+                        "batch_unique_raw_product_sha256_count"
+                    ],
+                    "scored_sku_to_poster_id": {
+                        row["sku_id"]: row["poster_id"] for row in rows
+                    },
+                    "cohort_requires_all_skus_ready": True,
+                })
+                (staged / "native_real_summary.json").write_text(
+                    json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
             for name in SCORE_FILES:
                 os.replace(staged / name, output_dir / name)
     except Exception:
