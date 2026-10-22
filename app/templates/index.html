@@ -45,8 +45,12 @@
 <p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
 <div class="actions">
 <button id="loadReviewQueue" class="secondary" type="button">刷新本地验收队列</button>
+<label for="batchReviewFile">仅看 M5g 批次</label>
+<input type="file" id="batchReviewFile" accept=".json,application/json" aria-label="选择 M5g 的 batch_import_results.json">
+<button id="clearBatchScope" class="secondary" type="button">清除批次筛选</button>
 <span id="reviewQueueStatus" class="tip">按需读取本地状态；不会自动执行 OCR 或模型。</span>
 </div>
+<p id="batchReviewScopeStatus" class="tip">当前查看全部本地海报。批次筛选文件仅在此浏览器中读取，不会上传到服务器。</p>
 <div id="reviewQueueItems" style="margin-top:12px;max-height:360px;overflow:auto"></div>
 </section>
 <h2>02 · 预览与修改</h2>
@@ -243,6 +247,88 @@ $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
 function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+// M5i: import the M5g result journal in the browser, never POST it.
+// Only SKU and poster IDs enter the ephemeral in-memory review filter.
+let batchReviewScope=null;
+let lastReviewQueueData=null;
+const BATCH_SHA=/^[0-9a-f]{64}$/;
+const BATCH_POSTER_ID=/^[0-9a-f]{32}$/;
+const BATCH_SKU=/^[A-Za-z0-9_-]{2,64}$/;
+function parseBatchReviewJournal(raw){
+  const data=JSON.parse(raw);
+  if(!data || data.schema_version!=='m5g-1' || data.mode!=='apply' ||
+     !BATCH_SHA.test(data.manifest_sha256) || !data.rows ||
+     typeof data.rows!=='object' || Array.isArray(data.rows))throw Error('不是有效的 M5g 已导入结果 JSON');
+  const entries=Object.entries(data.rows);
+  if(entries.length<1 || entries.length>100)throw Error('批次记录需要包含 1–100 个商品');
+  const seen=new Set(), scoped=new Map();
+  for(const [sku, record] of entries){
+    if(!BATCH_SKU.test(sku) || !record || !BATCH_POSTER_ID.test(record.poster_id) ||
+       record.version!==1 || !BATCH_SHA.test(record.product_sha256) ||
+       !BATCH_SHA.test(record.request_sha256) || seen.has(record.poster_id))
+       throw Error('批次数据缺失、重复或格式非法');
+    seen.add(record.poster_id);
+    scoped.set(record.poster_id,sku);
+  }
+  return {ids:scoped, manifest_sha256:data.manifest_sha256};
+}
+function renderReviewQueue(data){
+  lastReviewQueueData=data;
+  $('reviewQueueItems').replaceChildren();
+  const listed=batchReviewScope ? data.items.filter(x=>batchReviewScope.ids.has(x.poster_id)) : data.items;
+  const missing=batchReviewScope ? batchReviewScope.ids.size-listed.length : 0;
+  $('reviewQueueStatus').textContent=(batchReviewScope?'本批次 ':'全部 ')+listed.length+
+    ' 张待检海报（总库 '+data.total_posters+' 张）；按待处理状态排序。'+
+    (missing ? '本批次有 '+missing+' 个 ID 不在当前海报库，请核对 POSTER_DATA_DIR。':'');
+  for(const item of listed){
+    const row=document.createElement('div');
+    row.className='actions';
+    row.style.cssText='border-top:1px solid #2c4056;padding:10px 0;justify-content:space-between';
+    const text=document.createElement('div');text.style.cssText='flex:1;min-width:170px';
+    const label=document.createElement('div');
+    const sku=batchReviewScope?.ids.get(item.poster_id);
+    label.textContent=(sku?'SKU '+sku+' · ':'')+item.title+' · v'+item.version;
+    const hint=document.createElement('div');hint.className='tip';
+    hint.textContent=(QUEUE_STATUS_LABELS[item.status]||item.status)+' · '+item.action;
+    text.append(label,hint);
+    const open=document.createElement('button');
+    open.type='button';open.className='secondary';open.textContent='打开审核';
+    open.addEventListener('click',async()=>{
+      open.disabled=true;
+      try{
+        const res=await fetch(item.poster_url);const poster=await res.json();
+        if(!res.ok)throw Error(errorText(poster));
+        if(poster.version!==item.version)throw Error('该海报已有新版本，请刷新队列');
+        $('channelPreset').value='feed_4x5_native';display(poster);
+        $('preview').scrollIntoView({behavior:'smooth',block:'start'});
+        $('reviewQueueStatus').textContent='已打开 '+(sku||item.title)+' · v'+item.version+
+          '；核对 4:5 预览后进行人工标注。';
+      }catch(e){$('reviewQueueStatus').textContent='打开失败：'+e.message;}
+      finally{open.disabled=false;}
+    });
+    row.append(text,open);$('reviewQueueItems').append(row);
+  }
+}
+$('batchReviewFile').addEventListener('change',async()=>{
+  const file=$('batchReviewFile').files?.[0];
+  if(!file)return;
+  // Local-only parse: no file upload and no HTML insertion.
+  try{
+    if(file.size>200000)throw Error('批次文件超过 200 KB，拒绝解析');
+    const scope=parseBatchReviewJournal(await file.text());
+    batchReviewScope=scope;
+    $('batchReviewScopeStatus').textContent='仅看 M5g 批次：'+scope.ids.size+
+      ' 个 SKU（清单 SHA-256：'+scope.manifest_sha256.slice(0,12)+'…）。本地浏览器筛选，未上传文件。';
+    if(lastReviewQueueData)renderReviewQueue(lastReviewQueueData);
+  }catch(e){
+    $('batchReviewScopeStatus').textContent='批次筛选未更改：'+e.message;
+  }finally{$('batchReviewFile').value='';}
+});
+$('clearBatchScope').addEventListener('click',()=>{
+  batchReviewScope=null;
+  $('batchReviewScopeStatus').textContent='当前查看全部本地海报。';
+  if(lastReviewQueueData)renderReviewQueue(lastReviewQueueData);
+});
 const QUEUE_STATUS_LABELS={
   NEEDS_REVIEW:'待人工审核',REVIEW_UNSURE:'人工无法判断',
   OCR_MISSING:'缺 OCR 报告',OCR_NOT_OK:'OCR 未成功',OCR_STALE:'OCR 报告过期',
@@ -260,42 +346,7 @@ $('loadReviewQueue').addEventListener('click',async()=>{
     const data=await response.json();
     if(!response.ok)throw Error(errorText(data));
     if(reviewer!==$('nativeReviewer').value.trim())return;
-    $('reviewQueueStatus').textContent='共 '+data.total_posters+
-      ' 张海报（含 '+data.total_versions_in_cohort+' 个历史版本），按待处理状态排序。';
-    for(const item of data.items){
-      const row=document.createElement('div');
-      row.className='actions';
-      row.style.cssText='border-top:1px solid #2c4056;padding:10px 0;justify-content:space-between';
-      const text=document.createElement('div');
-      text.style.cssText='flex:1;min-width:170px';
-      const label=document.createElement('div');
-      label.textContent=item.title+' · v'+item.version;
-      const hint=document.createElement('div');
-      hint.className='tip';
-      hint.textContent=(QUEUE_STATUS_LABELS[item.status]||item.status)+
-        ' · '+item.action;
-      text.append(label,hint);
-      const open=document.createElement('button');
-      open.type='button';open.className='secondary';open.textContent='打开审核';
-      open.addEventListener('click',async()=>{
-        open.disabled=true;
-        try{
-          const res=await fetch(item.poster_url);
-          const poster=await res.json();
-          if(!res.ok)throw Error(errorText(poster));
-          if(poster.version!==item.version)
-            throw Error('该海报已有新版本，请刷新队列');
-          $('channelPreset').value='feed_4x5_native';
-          display(poster);
-          $('preview').scrollIntoView({behavior:'smooth',block:'start'});
-          $('reviewQueueStatus').textContent='已打开 '+item.title+' · v'+item.version+
-            '；请核对原生 4:5 预览后进行人工标注。';
-        }catch(e){$('reviewQueueStatus').textContent='打开失败：'+e.message;}
-        finally{open.disabled=false;}
-      });
-      row.append(text,open);
-      $('reviewQueueItems').append(row);
-    }
+    renderReviewQueue(data);
   }catch(e){$('reviewQueueStatus').textContent='读取队列失败：'+e.message;}
   finally{button.disabled=false;}
 });
