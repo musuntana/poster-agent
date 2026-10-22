@@ -117,17 +117,31 @@ def compose(spec: PosterSpec, product: Image.Image, logo: Image.Image | None, ba
         draw.text((75, top), line, font=title_font, fill="#FFFFFF", stroke_width=0)
         top += 86
     subtitle_font = _fit_text(draw, spec.subtitle, 400, max_size=29, min_size=20)
-    draw.text((75, top+10), spec.subtitle, font=subtitle_font, fill="#CAE4FF")
+    if spec.subtitle:
+        subtitle_box = draw.textbbox((0, 0), spec.subtitle, font=subtitle_font)
+        if subtitle_box[2] - subtitle_box[0] > 400 or top + 10 + (subtitle_box[3] - subtitle_box[1]) > 600:
+            raise ValueError("副标题超出方形海报安全排版区域，请缩短副标题")
+        draw.text((75, top+10), spec.subtitle, font=subtitle_font, fill="#CAE4FF")
 
     draw.text((75, 610), "限时到手价", font=get_font(31), fill="#CDE6FF")
     price_value = "¥" + price_text(spec.price)
     price_font = _fit_text(draw, price_value, 418, max_size=105, min_size=45)
+    price_box = draw.textbbox((0, 0), price_value, font=price_font)
+    if price_box[2] - price_box[0] > 418:
+        raise ValueError("价格过长，无法安全排版")
     draw.text((65, 668), price_value, font=price_font, fill="#FFE596", stroke_width=1, stroke_fill="#D59F52")
     if spec.original_price is not None:
-        draw.text((78, 800), "原价 ¥" + price_text(spec.original_price), font=get_font(28), fill="#BBD2ED")
+        original = "原价 ¥" + price_text(spec.original_price)
+        original_font = _fit_text(draw, original, 405, max_size=28, min_size=20)
+        original_box = draw.textbbox((0, 0), original, font=original_font)
+        if original_box[2] - original_box[0] > 405:
+            raise ValueError("原价过长，无法安全排版")
+        draw.text((78, 800), original, font=original_font, fill="#BBD2ED")
     draw.rounded_rectangle((76, 867, 410, 934), radius=28, fill="#F8CA5A")
     cta_font = _fit_text(draw, spec.cta, 300, max_size=36, min_size=21)
     box = draw.textbbox((0, 0), spec.cta, font=cta_font)
+    if box[2] - box[0] > 300:
+        raise ValueError("CTA 文案过长，无法放入按钮")
     draw.text((243 - (box[2]-box[0])/2, 877), spec.cta, font=cta_font, fill="#203653")
     output = io.BytesIO()
     canvas.convert("RGB").save(output, "PNG", optimize=True)
