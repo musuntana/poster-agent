@@ -43,6 +43,10 @@ def local_background(style: str) -> Image.Image:
         palette = ((151, 65, 120), (38, 27, 71))
     if "绿" in style or "自然" in style:
         palette = ((36, 112, 94), (11, 47, 68))
+    if "橙" in style or "暖阳" in style:
+        palette = ((194, 92, 34), (89, 39, 29))
+    if "紫" in style or "梦幻" in style:
+        palette = ((110, 65, 157), (39, 28, 82))
     img = Image.new("RGB", (SIZE, SIZE))
     draw = ImageDraw.Draw(img)
     for y in range(SIZE):
