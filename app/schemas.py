@@ -29,6 +29,8 @@ class PosterSpec(BaseModel):
 
 
 class PosterEdit(BaseModel):
+    # Optional optimistic-concurrency guard; legacy API clients may omit it.
+    expected_version: int | None = Field(default=None, ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=35)
     subtitle: str | None = Field(default=None, max_length=45)
     price: Decimal | None = Field(default=None, gt=0, le=999999, decimal_places=2)
