@@ -203,15 +203,25 @@ async def get_poster(poster_id: str):
 @app.post("/api/posters/{poster_id}/revisions", status_code=201)
 async def revise_poster(poster_id: str, edit: PosterEdit):
     try:
-        current = storage.view(poster_id)
-        existing = PosterSpec.model_validate(current["spec"])
         changes = edit.model_dump(exclude_unset=True)
+        expected_version = changes.pop("expected_version", None)
         if not changes:
             raise HTTPException(status_code=422, detail="至少修改一个字段")
-        spec = PosterSpec.model_validate({**existing.model_dump(), **changes})
-        product, logo, background = storage.read_assets(poster_id)
-        rendered = compose(spec, product, logo, background)
-        return storage.new_version(poster_id, spec, rendered)
+        # Keep the version comparison and write under one process lock. Without
+        # it, two browser tabs could both pass the stale-version check before
+        # either revision was committed. Multi-worker deployment is unsupported.
+        with storage.LOCK:
+            current = storage.view(poster_id)
+            if expected_version is not None and current["version"] != expected_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail="海报已有更新版本，请重新打开最新版本后再保存修改",
+                )
+            existing = PosterSpec.model_validate(current["spec"])
+            spec = PosterSpec.model_validate({**existing.model_dump(), **changes})
+            product, logo, background = storage.read_assets(poster_id)
+            rendered = compose(spec, product, logo, background)
+            return storage.new_version(poster_id, spec, rendered)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
