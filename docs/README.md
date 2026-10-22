@@ -25,6 +25,7 @@
 | OCR 环境证据与旧结果归档 | [m5f-evidence-run-safety.md](m5f-evidence-run-safety.md) | OCR 包版本/架构记录（非防伪）；评分产物归档与最新运行状态 |
 | 真实商品 CSV 安全导入 | [m5g-local-batch-import.md](m5g-local-batch-import.md) | 默认预检、显式 --apply、本地免费背景、执行账本与中断恢复 |
 | 本地原生 4:5 审核队列 | [m5h-local-review-queue.md](m5h-local-review-queue.md) | 最新版状态/标题、打开已有预览与人工审核；不运行 OCR |
+| 按 M5g 导入批次筛选审核队列 | [m5i-batch-review-scope.md](m5i-batch-review-scope.md) | 浏览器本地读取导入账本，SKU 级筛选已存在的审核队列 |
 
 ## 证据边界
 
