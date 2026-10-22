@@ -42,7 +42,7 @@ def test_authorized_license_and_safe_examples_pass_structural_checks(tmp_path):
     assert report["blockers"] == []
     assert report["public_release_ready"] is True
     # This only says files exist and the small scan found no obvious secret.
-    assert any("不是完整" in warning for warning in report["warnings"])
+    assert any("并非完整" in warning for warning in report["warnings"])
 
 
 @pytest.mark.parametrize("name", [
