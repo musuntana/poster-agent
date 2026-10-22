@@ -19,3 +19,23 @@ data/my-real-labels.csv
 # uv-managed environment and lightweight lint cache
 .ruff_cache/
 .uv-cache/
+
+# M5k: real SKU input batches and generated customer image material.
+# Public repository should track only explicitly reviewed text fixtures.
+data/real*/
+data/private/
+data/**/*.png
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.webp
+data/**/*.pdf
+
+# Never commit environment-specific API credentials or binary key stores.
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.db
