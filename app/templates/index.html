@@ -60,9 +60,12 @@
 <section id="editor" class="mt hidden">
 <h2>03 · 修改内容（不重新生成背景）</h2>
 <form id="editForm">
-<div class="row"><label>主标题</label><input id="editTitle" maxlength="35"></div>
-<div class="split"><div class="row"><label>活动价</label><input id="editPrice" type="number" step="0.01" min="0.01"></div><div class="row"><label>原价</label><input id="editOriginal" type="number" step="0.01"></div></div>
-<div class="actions"><button id="saveEdit" type="submit">保存新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
+<p class="tip">只重新排版文字和价格，保留原商品与背景。保存会生成新的不可变历史版本。</p>
+<div class="row"><label for="editTitle">主标题</label><input id="editTitle" required maxlength="35"></div>
+<div class="row"><label for="editSubtitle">副标题（可清空）</label><input id="editSubtitle" maxlength="45"></div>
+<div class="split"><div class="row"><label for="editPrice">活动价</label><input id="editPrice" type="number" step="0.01" min="0.01" required></div><div class="row"><label for="editOriginal">原价（可清空）</label><input id="editOriginal" type="number" step="0.01" min="0.01"></div></div>
+<div class="row"><label for="editCta">CTA 按钮文案</label><input id="editCta" required maxlength="12"></div>
+<div class="actions"><button id="saveEdit" type="submit">保存新版本</button><button id="reloadPoster" class="secondary" type="button">加载最新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
 </form>
 <div class="tip" id="editStatus"></div><div class="tip" id="history"></div>
 <section class="mt" id="channelFormats">
@@ -246,7 +249,7 @@ async function refreshExecutionStatus(){
 $('checkExecution').addEventListener('click',refreshExecutionStatus);
 refreshExecutionStatus();
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 // M5i: import the M5g result journal in the browser, never POST it.
 // Only SKU and poster IDs enter the ephemeral in-memory review filter.
 let batchReviewScope=null;
@@ -544,7 +547,59 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
     refreshExecutionStatus();
   }
 });
-$('editForm').addEventListener('submit',async e=>{e.preventDefault();if(!current)return;$('saveEdit').disabled=true;$('editStatus').textContent='正在重新排版…';try{const payload={title:$('editTitle').value,price:$('editPrice').value};payload.original_price=$('editOriginal').value || null;const res=await fetch('/api/posters/'+current.poster_id+'/revisions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const json=await res.json();if(!res.ok)throw Error(errorText(json));display(json);$('editStatus').textContent='新版本已保存；未调用图像模型';$('editStatus').className='tip good'}catch(err){$('editStatus').textContent=err.message;$('editStatus').className='tip bad'}finally{$('saveEdit').disabled=false}});
+$('editForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(!current)return;
+  const posterId=current.poster_id;
+  const version=current.version;
+  const payload={
+    expected_version:version,
+    title:$('editTitle').value,
+    subtitle:$('editSubtitle').value,
+    price:$('editPrice').value,
+    original_price:$('editOriginal').value || null,
+    cta:$('editCta').value,
+  };
+  $('saveEdit').disabled=true;
+  $('editStatus').textContent='正在重新排版…';
+  $('editStatus').className='tip';
+  try {
+    const res=await fetch('/api/posters/'+posterId+'/revisions',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),
+    });
+    const json=await res.json();
+    if(res.status===409){
+      throw Error('当前海报已有更新版本，修改未保存。请核对后点击「加载最新版本」重新编辑。');
+    }
+    if(!res.ok)throw Error(errorText(json));
+    if(!current || current.poster_id!==posterId)return;
+    display(json);
+    $('editStatus').textContent='新版本已保存：标题、副标题、活动价、原价和 CTA 均可编辑；未调用图像模型。';
+    $('editStatus').className='tip good';
+  } catch(err) {
+    $('editStatus').textContent='保存失败：'+err.message;
+    $('editStatus').className='tip bad';
+  } finally {$('saveEdit').disabled=false;}
+});
+$('reloadPoster').addEventListener('click',async()=>{
+  if(!current)return;
+  const posterId=current.poster_id;
+  $('reloadPoster').disabled=true;
+  try{
+    const res=await fetch('/api/posters/'+posterId);
+    const json=await res.json();
+    if(!res.ok)throw Error(errorText(json));
+    if(current?.poster_id===posterId){
+      display(json);
+      $('editStatus').textContent='已载入最新版本 v'+json.version+'，请重新检查并编辑。';
+      $('editStatus').className='tip';
+    }
+  }catch(err){
+    $('editStatus').textContent='读取最新版本失败：'+err.message;
+    $('editStatus').className='tip bad';
+  }finally{$('reloadPoster').disabled=false;}
+});
 $('runGate').addEventListener('click', async () => {
   if(!current)return;
   const posterId=current.poster_id, version=current.version;
