@@ -1,0 +1,41 @@
+# M5k — Poster Agent 开源发布准备清单
+
+**当前状态（2026-10-22）**：GitHub 仓库仍为 **Private**，GitHub 仓库信息没有识别到许可证，项目也未跟踪 `LICENSE`。本轮先建设贡献协作与敏感文件检查，不擅自变更仓库可见性、创建法律许可证或对外发布代码。
+
+## 维护者公开发布前必须确认
+
+- [ ] **权属与授权：** 核实全部源代码、图像、文档、训练/评测数据、字体与外部代码片段确实有权公开。禁止把公司内部商业合同、客户 SKU、Logo、商用字体或实际 API Key 当成公共样本。
+- [ ] **确定许可证：** 维护者根据自己的目标决定并添加根目录 `LICENSE`。常见可选思路包括 MIT（宽松）、Apache-2.0（宽松且含明确专利授权条款）、GPL-3.0（强 copyleft）；具体相容性、雇佣合同约束和第三方许可证应由有权决定的人核实。**此处不是法律意见，也不代替授权。**
+- [ ] **检查 Git 历史及 CI 产物：** 不仅检查目前 `main` 文件，还应审核历史提交中的敏感素材/凭据，并在泄露时撤销和轮换。当前离线脚本只扫描 Git 已暂存/跟踪的路径和少量高可信度文本密钥模式，不能检测历史或所有秘密。
+- [ ] **安全默认配置：** 默认服务只绑定 `127.0.0.1`，说明尚未鉴权、缺多租户与限流。不要直接将应用接到公网。审查 `.env.example` 是占位符，而不是实际凭据。
+- [ ] **身份与漏洞披露渠道：** GitHub Security 私密漏洞报告如有需要，须由维护者实际启用；未设置时不要在公开 Issue 披露攻击细节。
+- [ ] **依赖、贡献与 CI：** `uv.lock` 由 uv 生成；`CONTRIBUTING.md`、`SECURITY.md`、PR/Issue 模板已就绪；继续保留仅在 PR Ready / 明确手动请求时执行 quick CI 的策略。
+- [ ] **发布与质量声明：** 当前已具备本地 Demo 和离线评测代码，但未取得足够的真实 SKU 图片人工验收/真实 PaddleOCR 准确率证据。任何 README/Release 文案均需明确区分 synthetic mock、Linux 单图真实模型与客户实际准确率。
+- [ ] **最后再公开：** 仓库所有者确认前面事项后，才能考虑通过 GitHub 仓库 Settings 修改 Visibility、打首个 Release Tag 及公开推广；本轮没有对仓库进行任何可见性调整。
+
+## 自查命令（免费、离线）
+
+```bash
+uv sync --locked
+uv run --locked python -m scripts.check_repository_readiness
+```
+
+输出 JSON 报告：`public_release_ready`、`blockers`、`warnings`、跟踪文件数量与文本扫描数量。**当前预期**由于缺少许可证，`public_release_ready=false`；普通模式下许可证缺失仅提示，不会在私人开发期间阻断快速 CI。
+
+由维护者明确决定进入公开发布阶段后，使用：
+
+```bash
+uv run --locked python -m scripts.check_repository_readiness --strict-public
+```
+
+严格模式下无 `LICENSE` 或其他发布要求不满足则退出非零。即使所有检查项通过，依然必须进行人工安全、法律和素材授权核实。
+
+**无论是否严格模式，只要发现被 Git 跟踪的 `.env`、私有客户图/本地评测、密钥文件或高可信度密钥模式，脚本都会退出非零。** 这项功能将在既有 quick CI 增加轻量检查，但不会新增 push 触发器、模型调用或高成本扫描。
+
+## 新贡献者入口
+
+- [开发与 PR 指南](../CONTRIBUTING.md)
+- [安全披露与限制](../SECURITY.md)
+- [uv 开发环境与锁依赖](uv-workflow.md)
+- [已有功能与证据](../README.md)
+- [项目文档导航](README.md)
