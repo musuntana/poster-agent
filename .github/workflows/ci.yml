@@ -67,6 +67,8 @@ jobs:
           uv sync --locked
       - name: Ruff safety lint (no wholesale style rewrite)
         run: uv run --locked ruff check app tests scripts evals
+      - name: Check tracked secrets and local customer data (no network)
+        run: uv run --locked python -m scripts.check_repository_readiness
       - name: Validate Python syntax
         run: uv run --locked python -m compileall -q app tests scripts evals
       - name: Run pytest (no external model calls)
