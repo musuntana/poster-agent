@@ -154,6 +154,8 @@ def test_invalid_reviewer_rejected_and_html_controls_use_safe_text_content(
     assert 'id="loadReviewQueue"' in html
     assert 'id="reviewQueueItems"' in html
     assert "/api/trials/review-queue?reviewer=" in html
-    assert "textContent=item.title" in html
+    assert "label.textContent=(sku?" in html
+    assert "item.title+" in html
+    assert "hint.textContent=" in html
     assert "display(poster)" in html
     assert "item.version" in html
