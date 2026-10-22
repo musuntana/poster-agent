@@ -122,13 +122,13 @@ def compose(spec: PosterSpec, product: Image.Image, logo: Image.Image | None, ba
     draw.text((75, 610), "限时到手价", font=get_font(31), fill="#CDE6FF")
     price_value = "¥" + price_text(spec.price)
     price_font = _fit_text(draw, price_value, 418, max_size=105, min_size=45)
-    if draw.textbbox((0, 0), price_value, font=price_font)[2] > 418:
+    if (lambda box: box[2] - box[0] > 418)(draw.textbbox((0, 0), price_value, font=price_font)):
         raise ValueError("价格过长，无法安全排版")
     draw.text((65, 668), price_value, font=price_font, fill="#FFE596", stroke_width=1, stroke_fill="#D59F52")
     if spec.original_price is not None:
         original = "原价 ¥" + price_text(spec.original_price)
         original_font = _fit_text(draw, original, 405, max_size=28, min_size=20)
-        if draw.textbbox((0, 0), original, font=original_font)[2] > 405:
+        if (lambda box: box[2] - box[0] > 405)(draw.textbbox((0, 0), original, font=original_font)):
             raise ValueError("原价过长，无法安全排版")
         draw.text((78, 800), original, font=original_font, fill="#BBD2ED")
     draw.rounded_rectangle((76, 867, 410, 934), radius=28, fill="#F8CA5A")
