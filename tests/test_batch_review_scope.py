@@ -33,6 +33,9 @@ def test_batch_journal_contract_matches_browser_filter(tmp_path, monkeypatch, pr
     journal = json.loads((tmp_path / "results/batch_import_results.json").read_text())
     assert journal["schema_version"] == SCHEMA == "m5g-1"
     assert journal["mode"] == "apply"
+    assert journal["completed"] is True
+    assert journal["expected_sku_ids"] == ["sku-sample"]
+    assert journal["expected_sku_count"] == 1
     assert len(journal["manifest_sha256"]) == 64
     record = journal["rows"]["sku-sample"]
     assert len(record["poster_id"]) == 32
