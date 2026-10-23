@@ -246,7 +246,7 @@ def test_readiness_must_bind_exact_batch_journal(tmp_path, monkeypatch):
 
 def test_report_path_cannot_overwrite_any_input(tmp_path):
     manifest = tmp_path / "real_skus.csv"
-    manifest.write_text("sku_id\\n", encoding="utf-8")
+    manifest.write_text("sku_id\n", encoding="utf-8")
     with pytest.raises(M6ValidationError, match="不能覆盖"):
         _safe_report_destination(manifest, (manifest,))
 
