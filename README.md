@@ -1,6 +1,6 @@
 # Poster Agent · 电商营销海报生成与验收
 
-> **公开仓库状态（M5k）：** 本仓库当前为 **Public**，但尚无 `LICENSE`；**公开可见不等于授予复制、修改或再分发许可**。正式以开源项目方式发布前，仍需核实代码/素材权属、历史提交与 CI 产物，并由所有者决定许可证。详见 [发布准备清单](docs/open-source-release.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)、[安全披露](SECURITY.md)。
+> **开源许可：** 本项目采用 [Apache License 2.0（Apache-2.0）](https://www.apache.org/licenses/LICENSE-2.0)，完整许可文本见根目录 [`LICENSE`](LICENSE)。正式发布前仍需核实代码、第三方依赖、字体、素材、示例数据及历史提交的权属和授权；Apache-2.0 不会自动授权你无权再许可的内容。详见 [发布准备清单](docs/open-source-release.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)、[安全披露](SECURITY.md)。
 
 本项目面向电商运营，将 **Brief → 人工确认 → 商品图海报生成 → 多版本修改 → OCR/规则验收 → 人工标注和可复现评测** 串成一个单机可运行的工作流。
 
@@ -102,3 +102,8 @@ uv run --no-sync python -m scripts.ocr_probe --infer --image data/examples/sampl
 **下一优先级：** 收集不少于 20 张真实商品海报、人工复核原生 4:5 与方形版本的文字/商品保真效果，并完成真实 OCR；随后再决定是否为 9:16 和 16:9 实现独立排版。VLM 自动修复、鉴权、多租户和异步队列仍属后续里程碑。
 
 更多细节见 [当前文档索引](docs/README.md)，早期记录见 [历史归档](docs/archive/README.md)。
+
+
+## License
+
+The project license is Apache License 2.0 (`Apache-2.0`). See [`LICENSE`](LICENSE). Third-party dependencies, fonts, images, datasets, and other assets may have separate terms; review their provenance and permissions before redistribution.
