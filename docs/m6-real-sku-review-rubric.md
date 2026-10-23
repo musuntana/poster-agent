@@ -120,12 +120,12 @@ M6 输出评审表中的 `overall_accept` 是**单独的人工作出的整体接
 在 M5g 导入完成、两种尺寸的人工评审表已填写、且 M5j 已输出就绪报告后，运行下面的离线校验。它只读取本地文件，不执行 OCR、不调用模型、不上传数据；退出码 `0` 表示元数据与证据文件通过校验，`2` 表示阻塞项。`PASS` 不是视觉质量或生产就绪结论。
 
 ```bash
-uv run --locked python -m scripts.validate_m6_cohort \\
-  --manifest data/real_trial/real_skus.csv \\
-  --registry data/real_trial/m6_cohort_registry.csv \\
-  --journal data/eval_runs/m6_real_sku_batch_001/batch_import_results.json \\
-  --reviews data/real_trial/m6_output_reviews.csv \\
-  --readiness data/eval_runs/m6_native_trial_001/native_trial_readiness.json \\
+uv run --locked python -m scripts.validate_m6_cohort \
+  --manifest data/real_trial/real_skus.csv \
+  --registry data/real_trial/m6_cohort_registry.csv \
+  --journal data/eval_runs/m6_real_sku_batch_001/batch_import_results.json \
+  --reviews data/real_trial/m6_output_reviews.csv \
+  --readiness data/eval_runs/m6_native_trial_001/native_trial_readiness.json \
   --output data/eval_runs/m6_validation_001/m6_validation_report.json
 ```
 
