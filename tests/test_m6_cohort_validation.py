@@ -321,3 +321,48 @@ def test_native_manifest_hash_must_match_reviewed_native_png(tmp_path, monkeypat
     report = _validate(bundle)
     assert report["status"] == "BLOCKED"
     assert any("M5j native_image_sha256 不一致" in error for error in report["errors"])
+
+
+
+def test_overall_pass_is_blocked_when_any_field_fails(tmp_path, monkeypatch):
+    bundle = _bundle(tmp_path, monkeypatch)
+    row = next(row for row in bundle["review_rows"] if row["variant_id"] == "square")
+    row["price"] = "FAIL"
+    row["overall_accept"] = "PASS"
+    _write_csv(bundle["reviews"], REVIEW_FIELDS, bundle["review_rows"])
+
+    report = _validate(bundle)
+
+    assert report["status"] == "BLOCKED"
+    assert report["field_overall_mismatch_count"] == 1
+    assert any("字段含 FAIL/UNVERIFIED，禁止 overall PASS" in error for error in report["errors"])
+
+
+def test_overall_pass_is_blocked_when_any_field_is_unverified(tmp_path, monkeypatch):
+    bundle = _bundle(tmp_path, monkeypatch)
+    row = next(row for row in bundle["review_rows"] if row["variant_id"] == "feed_4x5_native")
+    row["title"] = "UNVERIFIED"
+    row["overall_accept"] = "PASS"
+    _write_csv(bundle["reviews"], REVIEW_FIELDS, bundle["review_rows"])
+
+    report = _validate(bundle)
+
+    assert report["status"] == "BLOCKED"
+    assert report["field_overall_mismatch_count"] == 1
+    assert any("字段含 FAIL/UNVERIFIED，禁止 overall PASS" in error for error in report["errors"])
+
+
+def test_overall_fail_with_all_fields_pass_is_reported_for_manual_reconciliation(
+    tmp_path, monkeypatch,
+):
+    bundle = _bundle(tmp_path, monkeypatch)
+    row = next(row for row in bundle["review_rows"] if row["variant_id"] == "square")
+    row["overall_accept"] = "FAIL"
+    row["overall_reason"] = "HOLISTIC_LAYOUT_DEFECT"
+    _write_csv(bundle["reviews"], REVIEW_FIELDS, bundle["review_rows"])
+
+    report = _validate(bundle)
+
+    assert report["status"] == "PASS"
+    assert report["field_overall_mismatch_count"] == 1
+    assert any("最终人工汇总中复核原因" in warning for warning in report["warnings"])

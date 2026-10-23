@@ -163,6 +163,7 @@ def validate_bundle(
     warnings: list[str] = []
     present_output_count = 0
     missing_output_count = 0
+    field_overall_mismatch_count = 0
 
     try:
         scope = load_batch_scope(journal_path)
@@ -382,6 +383,23 @@ def validate_bundle(
             errors.append(f"{sku}/{variant}: overall_accept 必须为 PASS/FAIL/UNVERIFIED")
         if row["overall_accept"] in {"FAIL", "UNVERIFIED"} and not row["overall_reason"]:
             errors.append(f"{sku}/{variant}: overall FAIL/UNVERIFIED 必须填写 overall_reason")
+        field_values = [row[field] for field in FIELD_LABELS if row[field] != "N/A"]
+        field_overall_mismatch = (
+            row["overall_accept"] == "PASS" and any(value != "PASS" for value in field_values)
+        ) or (
+            row["overall_accept"] in {"FAIL", "UNVERIFIED"}
+            and all(value == "PASS" for value in field_values)
+        )
+        if field_overall_mismatch:
+            field_overall_mismatch_count += 1
+            message = (
+                f"{sku}/{variant}: overall_accept={row['overall_accept']} "
+                "与字段标签派生状态不一致"
+            )
+            if row["overall_accept"] == "PASS":
+                errors.append(message + "；字段含 FAIL/UNVERIFIED，禁止 overall PASS")
+            else:
+                warnings.append(message + "；请在最终人工汇总中复核原因")
         if not _utc_timestamp(row["reviewed_at_utc"]):
             errors.append(f"{sku}/{variant}: reviewed_at_utc 必须是带 UTC 时区的 ISO 8601 时间")
 
@@ -454,6 +472,7 @@ def validate_bundle(
         "review_row_count": len(review_rows),
         "present_output_count": present_output_count,
         "missing_output_count": missing_output_count,
+        "field_overall_mismatch_count": field_overall_mismatch_count,
         "distinct_source_image_sha256_count": len(set(source_hashes)),
         "product_category_count": len({row["product_category"] for row in registry_rows if row["product_category"]}),
         "product_family_count": len({row["product_family_id"] for row in registry_rows if row["product_family_id"]}),
