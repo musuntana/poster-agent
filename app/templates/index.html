@@ -288,6 +288,10 @@ async function refreshExecutionStatus(keyOverride=null){
   try{saved=JSON.parse(localStorage.getItem('poster-last-execution')||'null')}catch(e){}
   const key=keyOverride || saved?.key;
   if(!key){$('executionStatus').textContent='尚无生成执行记录';return;}
+  if(!keyOverride && saved?.status==='REJECTED'){
+    $('executionStatus').textContent='上次请求在执行前被拒绝，没有创建执行记录；请按上方错误提示修正输入或等待限额窗口后重试。';
+    return;
+  }
   try{
     const res=await fetch('/api/executions/'+encodeURIComponent(key));
     const obj=await res.json();
@@ -672,7 +676,14 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
     const res=await fetch('/api/posters',{method:'POST',
       headers:{'Idempotency-Key':key},body});
     const json=await res.json();
-    if(!res.ok)throw Error(errorText(json));
+    if(!res.ok){
+      // These responses are emitted before the execution claim; no ledger row
+      // exists, so don't misreport a missing execution as a recovery failure.
+      if([422,428,429].includes(res.status)){
+        localStorage.setItem('poster-last-execution',JSON.stringify({key,fp,status:'REJECTED'}));
+      }
+      throw Error(errorText(json));
+    }
     localStorage.setItem('poster-last-execution',JSON.stringify({key,fp,status:'COMPLETED'}));
     display(json);
     $('createStatus').textContent='生成成功；主动再次生成会创建新执行，网络中断重试会复用原键';
