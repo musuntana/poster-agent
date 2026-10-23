@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 from . import storage, execution_store
-from .compositor import compose, local_background
+from .compositor import compose, local_background, validate_square_layout
 from .color_management import InvalidColorProfile, normalize_upload_color
 from .image_provider import generate_ai_background, ImageProviderError
 from .schemas import PosterSpec, PosterEdit
@@ -159,6 +159,13 @@ async def create_poster(
             raise HTTPException(status_code=409, detail="当前字段与已确认的规格不一致，请重新编译并确认")
     sku = await read_upload(product)
     brand_logo = await read_upload(logo) if logo is not None and logo.filename else None
+    # Layout errors are deterministic input failures. Reject them before the
+    # idempotency claim and before any paid image-provider call.
+    try:
+        validate_square_layout(spec)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # Claim BEFORE calling a paid model. Requests without this header still use
     # the M1 legacy behavior (for compatibility), and are not idempotent.
     if idempotency_key is not None:
