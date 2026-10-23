@@ -7,17 +7,17 @@ from app import execution_store
 
 client = TestClient(app)
 
-def data(price="199"):
-    return {"title": "双十一电动牙刷", "price": price,
+def data(price="199", subtitle="品质生活 · 限时优惠"):
+    return {"title": "双十一电动牙刷", "price": price, "subtitle": subtitle,
             "style": "蓝色科技风", "background_mode": "local"}
 
 
-def post(product_bytes, key, price="199"):
+def post(product_bytes, key, price="199", subtitle="品质生活 · 限时优惠"):
     return client.post(
         "/api/posters",
         headers={"Idempotency-Key": key},
         files={"product": ("sku.png", product_bytes, "image/png")},
-        data=data(price),
+        data=data(price, subtitle),
     )
 
 
@@ -85,3 +85,28 @@ def test_bad_key_rejected_and_missing_execution_404(tmp_path, monkeypatch, produ
     assert post(product_bytes, "bad").status_code == 422
     assert client.get("/api/executions/bad").status_code == 422
     assert client.get("/api/executions/nonexistent-key").status_code == 404
+
+
+def test_unrenderable_copy_rejected_before_claim_or_paid_model(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    calls = {"count": 0}
+
+    async def unexpected_paid_call(style):
+        calls["count"] += 1
+        raise AssertionError("invalid layout must be rejected before a paid model call")
+
+    monkeypatch.setattr("app.main.generate_ai_background", unexpected_paid_call)
+    response = client.post(
+        "/api/posters",
+        headers={"Idempotency-Key": "m2c-invalid-layout-key"},
+        files={"product": ("sku.png", product_bytes, "image/png")},
+        data={**data(subtitle="超长副标题" * 9), "background_mode": "ai"},
+    )
+
+    assert response.status_code == 422
+    assert "副标题" in response.json()["detail"]
+    assert calls["count"] == 0
+    assert client.get("/api/executions/m2c-invalid-layout-key").status_code == 404

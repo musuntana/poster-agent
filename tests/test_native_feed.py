@@ -126,14 +126,30 @@ def test_wrong_paths_fail_safely(tmp_path, monkeypatch, product_bytes):
     assert client.get(f"/api/posters/{pid}/versions/1/exports/fake_native").status_code == 422
 
 
-def test_native_variant_rejects_overflowing_subtitle(tmp_path, monkeypatch, product_bytes):
+def test_revision_rejects_subtitle_that_square_layout_cannot_render(
+    tmp_path, monkeypatch, product_bytes
+):
     pid = _make(tmp_path, monkeypatch, product_bytes)
-    # Model accepts 45 chars, but this fixed native layout must fail instead
-    # of silently cropping text when subtitle is too wide.
     text = "超长副标题" * 9
     assert len(text) == 45
+
+    # The square render is part of revision creation. Reject the invalid
+    # revision atomically instead of saving a new version with clipped text.
     updated = client.post(f"/api/posters/{pid}/revisions", json={"subtitle": text})
-    assert updated.status_code == 201
-    r = client.get(f"/api/posters/{pid}/versions/2/exports/feed_4x5_native")
-    assert r.status_code == 422
-    assert "副标题" in r.json()["detail"]
+    assert updated.status_code == 422
+    assert "副标题" in updated.json()["detail"]
+    assert client.get(
+        f"/api/posters/{pid}/versions/2/exports/feed_4x5_native"
+    ).status_code == 404
+
+
+def test_native_layout_rejects_overflowing_subtitle():
+    import pytest
+
+    product = Image.new("RGBA", (300, 450), (160, 130, 120, 255))
+    background = Image.new("RGB", (1024, 1024), (70, 80, 100))
+    text = "超长副标题" * 9
+    spec = PosterSpec(title="电动牙刷", subtitle=text, price="199")
+
+    with pytest.raises(ValueError, match="副标题"):
+        render_native_feed(spec, product, None, background)
