@@ -45,6 +45,11 @@ REVIEW_FIELDS = (
     "original_price_position", "cta", "composition", "overall_accept",
     "overall_reason", "reviewed_at_utc",
 )
+NATIVE_MANIFEST_FIELDS = (
+    "poster_id", "version", "sku_id", "status", "definite_labels",
+    "ocr_text_labels", "unsure_labels", "product_sha256",
+    "native_image_sha256", "action",
+)
 FIELD_LABELS = (
     "sku_integrity", "text_legibility", "title", "subtitle", "price",
     "original_price", "price_position", "original_price_position", "cta",
@@ -126,6 +131,7 @@ def validate_bundle(
     registry: Path,
     journal: Path,
     reviews: Path,
+    native_manifest: Path,
     readiness: Path,
     *,
     min_skus: int = MIN_SKUS,
@@ -137,6 +143,9 @@ def validate_bundle(
     )
     reviews_path, review_rows, reviews_sha = _read_csv(
         Path(reviews), REVIEW_FIELDS, "M6 output review"
+    )
+    _native_manifest_path, native_rows, native_manifest_sha = _read_csv(
+        Path(native_manifest), NATIVE_MANIFEST_FIELDS, "M5j native trial manifest"
     )
     journal_path = Path(journal).resolve(strict=True)
     journal_path, journal_data, journal_sha = _read_json(journal_path, "M5g batch journal")
@@ -181,6 +190,34 @@ def validate_bundle(
         errors.append("M5g rows 与冻结 CSV 的 SKU 集合不一致")
     if scope.get("batch_sku_count") != len(expected_skus):
         errors.append("M5g batch scope SKU 数与冻结 CSV 不一致")
+    native_by_sku: dict[str, dict] = {}
+    if len(native_rows) != len(expected_skus):
+        errors.append("M5j native_trial_manifest.csv 行数与冻结 cohort SKU 数不一致")
+    for index, row in enumerate(native_rows, start=2):
+        sku = row["sku_id"]
+        if not SKU.fullmatch(sku):
+            errors.append(f"M5j manifest 第 {index} 行 sku_id 不合法")
+            continue
+        if sku in native_by_sku:
+            errors.append(f"M5j manifest 中 sku_id 重复：{sku}")
+            continue
+        native_by_sku[sku] = row
+        if sku not in expected_skus:
+            errors.append(f"M5j manifest 含 cohort 之外的 SKU：{sku}")
+            continue
+        journal_item = journal_rows.get(sku, {})
+        if row["poster_id"] != journal_item.get("poster_id"):
+            errors.append(f"{sku}: M5j manifest poster_id 与 M5g journal 不一致")
+        if row["product_sha256"] != journal_item.get("product_sha256"):
+            errors.append(f"{sku}: M5j manifest product_sha256 与 M5g journal 不一致")
+        if not _is_sha(row["native_image_sha256"]):
+            errors.append(f"{sku}: M5j manifest native_image_sha256 格式无效")
+        if row["status"] != "READY":
+            errors.append(f"{sku}: M5j manifest 状态不是 READY")
+        if not VERSION.fullmatch(row["version"]):
+            errors.append(f"{sku}: M5j manifest version 必须是正整数")
+    if set(native_by_sku) != expected_skus:
+        errors.append("M5j manifest 的 SKU 集合必须与冻结 M5g CSV 完全一致")
     if len(expected_skus) < min_skus:
         errors.append(f"独立 SKU 数不足：{len(expected_skus)}，要求至少 {min_skus}")
 
@@ -290,6 +327,16 @@ def validate_bundle(
         if not VERSION.fullmatch(row["source_version"]):
             errors.append(f"{sku}/{variant}: source_version 必须是正整数")
             continue
+
+        if variant == "feed_4x5_native":
+            native_record = native_by_sku.get(sku)
+            if native_record is None:
+                errors.append(f"{sku}/{variant}: 缺少 M5j native manifest 记录")
+            else:
+                if native_record["version"] != row["source_version"]:
+                    errors.append(f"{sku}/{variant}: source_version 与 M5j native manifest 不一致")
+                if native_record["native_image_sha256"] != row["output_image_sha256"]:
+                    errors.append(f"{sku}/{variant}: 评审图片 SHA-256 与 M5j native_image_sha256 不一致")
 
         poster_id = row["poster_id"]
         try:
@@ -412,6 +459,7 @@ def validate_bundle(
             "batch_journal": journal_sha,
             "cohort_registry": registry_sha,
             "output_reviews": reviews_sha,
+            "m5j_native_manifest": native_manifest_sha,
             "m5j_readiness": readiness_sha,
         },
         "warnings": warnings,
@@ -443,19 +491,23 @@ def main() -> int:
     parser.add_argument("--registry", type=Path, required=True, help="Local M6 cohort registry CSV")
     parser.add_argument("--journal", type=Path, required=True, help="Completed M5g batch_import_results.json")
     parser.add_argument("--reviews", type=Path, required=True, help="Local M6 output review CSV")
+    parser.add_argument("--native-manifest", type=Path, required=True,
+                        help="M5j native_trial_manifest.csv; binds reviewed PNG to OCR/review evidence")
     parser.add_argument("--readiness", type=Path, required=True, help="M5j native_trial_readiness.json")
     parser.add_argument("--output", type=Path, required=True, help="Local JSON report destination")
     args = parser.parse_args()
     try:
         destination = _safe_report_destination(
             args.output,
-            (args.manifest, args.registry, args.journal, args.reviews, args.readiness),
+            (args.manifest, args.registry, args.journal, args.reviews,
+             args.native_manifest, args.readiness),
         )
     except M6ValidationError as exc:
         parser.error(str(exc))
     try:
         report = validate_bundle(
-            args.manifest, args.registry, args.journal, args.reviews, args.readiness
+            args.manifest, args.registry, args.journal, args.reviews,
+            args.native_manifest, args.readiness
         )
     except (M6ValidationError, BatchError, OSError, ValueError, json.JSONDecodeError) as exc:
         report = {
