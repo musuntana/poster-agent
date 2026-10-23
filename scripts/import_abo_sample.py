@@ -159,6 +159,7 @@ def _import_sample_into(output_dir: Path, limit: int = 20) -> dict:
         + "\n".join(rows) + "\n", encoding="utf-8")
     return {"dataset": "Amazon Berkeley Objects", "license": "CC BY 4.0", "count": len(products),
             "category_count": len({x["category"] for x in products}), "manifest": str(manifest),
+            "manifest_sha256": manifest_sha,
             "attribution": str(output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"),
             "synthetic_prices": True, "image_hashes_recorded": len(rows)}
 
@@ -232,8 +233,8 @@ def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dic
             continue
         item_id = cells[0]
         sku = f"ABO-{item_id}"
-        if not item_id or sku in attributed_hashes:
-            raise ValueError("Existing cohort attribution has an empty or duplicate item ID")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,60}", item_id) or sku in attributed_hashes:
+            raise ValueError("Existing cohort attribution has an invalid or duplicate item ID")
         attributed_hashes[sku] = cells[4]
 
     if len(attributed_hashes) != count:
@@ -249,9 +250,10 @@ def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dic
             raise ValueError("Existing cohort has duplicate or unattributed SKU IDs")
         seen.add(sku)
 
-        image_value = (row.get("product_image") or "").strip()
+        raw_image_value = row.get("product_image") or ""
+        image_value = raw_image_value.strip()
         image_relative = Path(image_value)
-        if not image_value or image_value != image_value.strip() or image_relative.is_absolute():
+        if not image_value or raw_image_value != image_value or image_relative.is_absolute():
             raise ValueError(f"{sku}: source image path must be a relative local path")
         image_path = (output_dir / image_relative).resolve()
         if not image_path.is_relative_to(output_dir) or not image_path.is_file():
