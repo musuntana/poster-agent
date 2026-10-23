@@ -62,6 +62,8 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M6 真实 SKU 评测准备：** 已提供 M5g 生成清单、授权治理表、人工审核工作表和本地证据门禁；`scripts.prepare_m6_review` 可从完整 M5g 批次离线导出方图及原生 4:5 图，并生成全部为 `UNVERIFIED` 的本地审核草稿，`scripts.validate_m6_cohort` 则检查版本、图片/规格哈希和 M5j 证据范围。两者都不运行真实 OCR、不调用收费模型、不替代人工验收。详见 [M6 评测协议](docs/m6-real-sku-review-rubric.md)。
 
+**公开目录 SKU Smoke Test（不是业务质量评测）：** 可从 Amazon Berkeley Objects（CC BY 4.0）数据集选取 20 张目录商品图，在本地跑通批量导入与原生 4:5 海报导出。价格为确定性合成值；该流程不抓取淘宝、拼多多或京东，不执行真实 OCR 或人工评分，也不能证明真实价格准确性。操作步骤与限制见 [公开 SKU Smoke Test](docs/public-abo-sku-smoke-test.md)。
+
 **M5i 已支持按导入批次筛选审核队列：** 在现有 M5h 页面选择 M5g 的 `batch_import_results.json`，浏览器仅在内存中筛选对应 SKU，不上传该文件，也不改变全量 M5e 评分样本范围。详见 [M5i 本地批次筛选](docs/m5i-batch-review-scope.md)。
 
 所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
