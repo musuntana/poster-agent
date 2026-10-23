@@ -6,11 +6,16 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from app import storage
 from scripts import real_sku_batch as batch
-from scripts.validate_m6_cohort import validate_bundle
+from scripts.validate_m6_cohort import (
+    M6ValidationError,
+    _safe_report_destination,
+    validate_bundle,
+)
 
 
 REGISTRY_FIELDS = [
@@ -238,3 +243,16 @@ def test_readiness_must_bind_exact_batch_journal(tmp_path, monkeypatch):
     report = _validate(bundle)
     assert report["status"] == "BLOCKED"
     assert any("journal_sha256" in error for error in report["errors"])
+
+def test_report_path_cannot_overwrite_any_input(tmp_path):
+    manifest = tmp_path / "real_skus.csv"
+    manifest.write_text("sku_id\\n", encoding="utf-8")
+    with pytest.raises(M6ValidationError, match="不能覆盖"):
+        _safe_report_destination(manifest, (manifest,))
+
+
+def test_report_path_does_not_overwrite_previous_evidence(tmp_path):
+    report = tmp_path / "m6_report.json"
+    report.write_text('{"status":"PASS"}', encoding="utf-8")
+    with pytest.raises(M6ValidationError, match="已存在"):
+        _safe_report_destination(report, (tmp_path / "manifest.csv",))
