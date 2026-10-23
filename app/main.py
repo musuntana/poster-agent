@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated
 import warnings
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Request
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Request, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
@@ -148,6 +148,12 @@ def _fingerprint(spec: PosterSpec, product: Image.Image, logo: Image.Image | Non
     return digest.hexdigest()
 
 
+@app.get("/api/executions")
+def list_executions(limit: int = Query(default=10, ge=1, le=50)):
+    """List recent execution summaries without exposing request payloads or result specs."""
+    return {"items": execution_store.list_recent(limit)}
+
+
 @app.get("/api/executions/{key}")
 def get_execution(key: str):
     try:
@@ -178,6 +184,21 @@ async def create_poster(
                           background_mode=background_mode)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
+    # Fail fast for paid AI requests before reading or decoding uploaded files.
+    # A stable key lets the ledger prevent accidental duplicate provider calls.
+    if spec.background_mode == "ai" and not idempotency_key:
+        raise HTTPException(
+            status_code=428,
+            detail=(
+                "AI 生图可能产生费用，必须提供 Idempotency-Key。若上次请求结果未知，"
+                "请先查询执行记录，不要直接发起新的付费请求。"
+            ),
+        )
+    if spec.background_mode == "ai":
+        try:
+            execution_store.validate_key(idempotency_key)
+        except execution_store.InvalidExecutionKey as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     # M2b: creating an image from an approved Brief must use exactly the
     # confirmed structured specification. Existing manually-filled M1 requests
     # without review_run_id remain supported.
@@ -199,27 +220,26 @@ async def create_poster(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Paid image generation must be idempotent at the API boundary. The browser
-    # already sends this header; reject direct API callers that could otherwise
-    # accidentally repeat a billable operation after a timeout or double-submit.
-    if spec.background_mode == "ai" and idempotency_key is None:
-        raise HTTPException(
-            status_code=428,
-            detail=(
-                "AI 生图可能产生费用，必须提供 Idempotency-Key。若上次请求结果未知，"
-                "请先查询执行记录，不要直接发起新的付费请求。"
-            ),
-        )
-
     # Claim BEFORE calling a paid model. Local-background requests retain the
     # legacy optional-key behavior; AI requests above cannot proceed without a key.
     if idempotency_key is not None:
         try:
-            previous = execution_store.begin(idempotency_key, _fingerprint(spec, sku, brand_logo))
+            previous = execution_store.begin(
+                idempotency_key,
+                _fingerprint(spec, sku, brand_logo),
+                paid=spec.background_mode == "ai",
+            )
             if previous is not None:
                 return previous
         except execution_store.InvalidExecutionKey as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except execution_store.PaidGenerationLimitExceeded as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        except execution_store.ExecutionConfigurationError as exc:
+            logger.error("Invalid paid generation limit configuration: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="AI 生图限额配置无效，请检查服务端环境变量"
+            ) from exc
         except execution_store.ExecutionConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     try:

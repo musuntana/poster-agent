@@ -12,7 +12,7 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +27,22 @@ class ExecutionConflict(RuntimeError):
     pass
 
 
+class PaidGenerationLimitExceeded(RuntimeError):
+    pass
+
+
+class ExecutionConfigurationError(RuntimeError):
+    pass
+
+
 def _validate(key: str) -> None:
     if not VALID_KEY.fullmatch(key):
         raise InvalidExecutionKey("Idempotency-Key 只能包含 8-128 位字母、数字、下划线和短横线")
+
+
+def validate_key(key: str) -> None:
+    """Validate an idempotency key without opening or mutating the execution ledger."""
+    _validate(key)
 
 
 @contextmanager
@@ -58,7 +71,45 @@ def _connect():
             FOREIGN KEY(idempotency_key) REFERENCES poster_executions(idempotency_key)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS paid_generation_events (
+            idempotency_key TEXT PRIMARY KEY,
+            started_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS execution_schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )
+    """)
     try:
+        # Backfill completed legacy AI runs once so the new hourly guardrail
+        # accounts for recent completed requests already present in this DB.
+        with conn:
+            migrated = conn.execute(
+                "SELECT 1 FROM execution_schema_migrations WHERE version=1"
+            ).fetchone()
+            if not migrated:
+                rows = conn.execute(
+                    "SELECT idempotency_key,started_at,result_json FROM poster_executions "
+                    "WHERE status='COMPLETED' AND result_json IS NOT NULL"
+                ).fetchall()
+                for row in rows:
+                    try:
+                        result = json.loads(row["result_json"])
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+                    if isinstance(result, dict) and result.get("background_mode") == "ai":
+                        conn.execute(
+                            "INSERT OR IGNORE INTO paid_generation_events(idempotency_key,started_at) "
+                            "VALUES(?,?)",
+                            (row["idempotency_key"], row["started_at"]),
+                        )
+                conn.execute(
+                    "INSERT OR IGNORE INTO execution_schema_migrations(version,applied_at) VALUES(1,?)",
+                    (_time(),),
+                )
         with conn:
             yield conn
     finally:
@@ -69,6 +120,17 @@ def _time() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _positive_env_limit(name: str, default: int, maximum: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ExecutionConfigurationError(f"{name} must be an integer") from exc
+    if not 1 <= value <= maximum:
+        raise ExecutionConfigurationError(f"{name} must be between 1 and {maximum}")
+    return value
+
+
 def _event(conn: sqlite3.Connection, key: str, name: str) -> None:
     conn.execute(
         "INSERT INTO execution_events(idempotency_key,event_type,occurred_at) VALUES(?,?,?)",
@@ -76,12 +138,33 @@ def _event(conn: sqlite3.Connection, key: str, name: str) -> None:
     )
 
 
-def begin(key: str, request_hash: str) -> dict[str, Any] | None:
-    """原子预留一次生成。None=取得执行权；dict=直接复用已完成结果。
+def begin(
+    key: str,
+    request_hash: str,
+    *,
+    paid: bool = False,
+    max_paid_per_hour: int | None = None,
+    max_concurrent_paid: int | None = None,
+) -> dict[str, Any] | None:
+    """Atomically claim a generation and enforce local paid-call guardrails.
 
-    如果模型曾经开始执行、但客户端/服务器丢失结果，拒绝自动重新调用。
+    None means the caller acquired execution rights; a dict reuses a completed
+    result. Paid limits are reserved in the same SQLite transaction as the claim.
     """
     _validate(key)
+    if paid:
+        if max_paid_per_hour is None:
+            max_paid_per_hour = _positive_env_limit(
+                "POSTER_MAX_AI_GENERATIONS_PER_HOUR", default=20, maximum=10000
+            )
+        if max_concurrent_paid is None:
+            max_concurrent_paid = _positive_env_limit(
+                "POSTER_MAX_CONCURRENT_AI_GENERATIONS", default=1, maximum=100
+            )
+        if not 1 <= max_paid_per_hour <= 10000:
+            raise ExecutionConfigurationError("max_paid_per_hour must be between 1 and 10000")
+        if not 1 <= max_concurrent_paid <= 100:
+            raise ExecutionConfigurationError("max_concurrent_paid must be between 1 and 100")
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
@@ -96,11 +179,47 @@ def begin(key: str, request_hash: str) -> dict[str, Any] | None:
             raise ExecutionConflict(
                 "任务执行中或结果未知；不会自动重试收费模型。请查询 /api/executions/{key}"
             )
+
+        if paid:
+            now_dt = datetime.now(timezone.utc)
+            cutoff = (now_dt - timedelta(hours=1)).isoformat(timespec="seconds")
+            retention_cutoff = (now_dt - timedelta(days=7)).isoformat(timespec="seconds")
+            conn.execute(
+                "DELETE FROM paid_generation_events "
+                "WHERE started_at < ? AND NOT EXISTS ("
+                "SELECT 1 FROM poster_executions p "
+                "WHERE p.idempotency_key=paid_generation_events.idempotency_key "
+                "AND p.status='RUNNING')",
+                (retention_cutoff,),
+            )
+            active = conn.execute(
+                "SELECT COUNT(*) FROM paid_generation_events e "
+                "JOIN poster_executions p ON p.idempotency_key=e.idempotency_key "
+                "WHERE p.status='RUNNING'"
+            ).fetchone()[0]
+            if active >= max_concurrent_paid:
+                raise PaidGenerationLimitExceeded(
+                    "AI 生图已达到本地演示的并发上限；本次未调用模型，请稍后重试"
+                )
+            recent = conn.execute(
+                "SELECT COUNT(*) FROM paid_generation_events WHERE started_at >= ?",
+                (cutoff,),
+            ).fetchone()[0]
+            if recent >= max_paid_per_hour:
+                raise PaidGenerationLimitExceeded(
+                    "AI 生图已达到每小时请求上限；本次未调用模型，请稍后再试"
+                )
+
         now = _time()
         conn.execute(
             "INSERT INTO poster_executions VALUES(?,?,'RUNNING',NULL,?,?)",
             (key, request_hash, now, now)
         )
+        if paid:
+            conn.execute(
+                "INSERT INTO paid_generation_events(idempotency_key,started_at) VALUES(?,?)",
+                (key, now),
+            )
         _event(conn, key, "CLAIMED")
     return None
 
@@ -173,3 +292,32 @@ def recover_incomplete() -> int:
             )
             _event(conn, key, "RECOVERED_AS_UNKNOWN")
         return len(rows)
+
+
+def list_recent(limit: int = 20) -> list[dict[str, Any]]:
+    """Return a bounded, privacy-minimized summary of recent execution records."""
+    if not 1 <= limit <= 50:
+        raise ValueError("limit must be between 1 and 50")
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT idempotency_key,status,started_at,updated_at,result_json "
+            "FROM poster_executions "
+            "ORDER BY updated_at DESC, started_at DESC, idempotency_key DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        result = json.loads(row["result_json"]) if row["result_json"] else None
+        items.append(
+            {
+                "idempotency_key": row["idempotency_key"],
+                "status": row["status"],
+                "started_at": row["started_at"],
+                "updated_at": row["updated_at"],
+                "poster_id": result.get("poster_id") if result else None,
+                "version": result.get("version") if result else None,
+                "background_mode": result.get("background_mode") if result else None,
+            }
+        )
+    return items

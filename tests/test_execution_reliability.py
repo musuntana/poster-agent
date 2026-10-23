@@ -137,6 +137,7 @@ def test_ai_requires_idempotency_key_before_provider_call(tmp_path, monkeypatch,
     assert "Idempotency-Key" in response.json()["detail"]
     assert calls["count"] == 0
     assert not (tmp_path / "posters").exists()
+    assert not (tmp_path / "executions.sqlite3").exists()
 
 
 def test_concurrent_duplicate_paid_requests_dispatch_provider_once(
@@ -184,3 +185,171 @@ def test_concurrent_duplicate_paid_requests_dispatch_provider_once(
     status = second_client.get("/api/executions/m2c-concurrent-paid-key")
     assert status.status_code == 200
     assert status.json()["status"] == "COMPLETED"
+
+
+def test_local_mode_remains_backward_compatible_without_idempotency_key(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    response = client.post(
+        "/api/posters",
+        files={"product": ("sku.png", product_bytes, "image/png")},
+        data=data(),
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["background_mode"] == "local"
+
+
+def test_recent_execution_history_lists_completed_and_unknown_summaries(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+
+    completed = post(product_bytes, "m2c-history-done")
+    assert completed.status_code == 201, completed.text
+    assert execution_store.begin("m2c-history-unknown", "history-hash") is None
+    execution_store.mark_unknown("m2c-history-unknown")
+
+    response = client.get("/api/executions?limit=10")
+
+    assert response.status_code == 200
+    items = {item["idempotency_key"]: item for item in response.json()["items"]}
+    assert items["m2c-history-done"]["status"] == "COMPLETED"
+    assert items["m2c-history-done"]["poster_id"] == completed.json()["poster_id"]
+    assert items["m2c-history-done"]["version"] == 1
+    assert items["m2c-history-unknown"]["status"] == "UNKNOWN"
+    assert items["m2c-history-unknown"]["poster_id"] is None
+    # Summary endpoint must not disclose full request/result payloads.
+    assert "result" not in items["m2c-history-done"]
+    assert "spec" not in items["m2c-history-done"]
+    assert "image_url" not in items["m2c-history-done"]
+
+
+def test_recent_execution_history_limit_is_bounded():
+    assert client.get("/api/executions?limit=0").status_code == 422
+    assert client.get("/api/executions?limit=51").status_code == 422
+
+
+def test_paid_generation_concurrency_limit_does_not_claim_second_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    assert execution_store.begin(
+        "m2c-paid-active-01",
+        "hash-1",
+        paid=True,
+        max_paid_per_hour=20,
+        max_concurrent_paid=1,
+    ) is None
+
+    from pytest import raises
+    with raises(execution_store.PaidGenerationLimitExceeded, match="并发上限"):
+        execution_store.begin(
+            "m2c-paid-active-02",
+            "hash-2",
+            paid=True,
+            max_paid_per_hour=20,
+            max_concurrent_paid=1,
+        )
+
+    with raises(LookupError):
+        execution_store.get("m2c-paid-active-02")
+
+
+def test_paid_generation_hourly_limit_rejects_before_second_provider_call(
+    tmp_path, monkeypatch, product_bytes
+):
+    from PIL import Image
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    monkeypatch.setenv("POSTER_MAX_AI_GENERATIONS_PER_HOUR", "1")
+    monkeypatch.setenv("POSTER_MAX_CONCURRENT_AI_GENERATIONS", "1")
+    calls = {"count": 0}
+
+    async def fake_paid_generation(style):
+        calls["count"] += 1
+        return Image.new("RGB", (1024, 1024), "#183050")
+
+    monkeypatch.setattr("app.main.generate_ai_background", fake_paid_generation)
+
+    def paid_post(key):
+        return client.post(
+            "/api/posters",
+            headers={"Idempotency-Key": key},
+            files={"product": ("sku.png", product_bytes, "image/png")},
+            data={**data(), "background_mode": "ai"},
+        )
+
+    first = paid_post("m2c-paid-hour-01")
+    second = paid_post("m2c-paid-hour-02")
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 429
+    assert "每小时请求上限" in second.json()["detail"]
+    assert calls["count"] == 1
+    assert client.get("/api/executions/m2c-paid-hour-02").status_code == 404
+
+def test_ai_mode_rejects_invalid_key_before_upload_decode(tmp_path, monkeypatch):
+    execution_db = tmp_path / "executions.sqlite3"
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(execution_db))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+
+    response = client.post(
+        "/api/posters",
+        headers={"Idempotency-Key": "bad"},
+        files={"product": ("broken.png", b"not-an-image", "image/png")},
+        data={**data(), "background_mode": "ai"},
+    )
+
+    assert response.status_code == 422
+    assert "Idempotency-Key" in response.json()["detail"]
+    assert not execution_db.exists()
+    assert not (tmp_path / "posters").exists()
+
+
+def test_paid_budget_backfills_recent_completed_legacy_ai_runs(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+    from datetime import datetime, timezone
+
+    execution_db = tmp_path / "executions.sqlite3"
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(execution_db))
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    legacy_result = json.dumps({
+        "poster_id": "legacy-poster-001",
+        "version": 1,
+        "background_mode": "ai",
+    })
+
+    # Build the pre-guardrail ledger schema: no paid events or migration table.
+    with sqlite3.connect(execution_db) as conn:
+        conn.execute(
+            """CREATE TABLE poster_executions (
+                idempotency_key TEXT PRIMARY KEY,
+                request_hash TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('RUNNING','COMPLETED','UNKNOWN')),
+                result_json TEXT,
+                started_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO poster_executions VALUES (?, ?, 'COMPLETED', ?, ?, ?)",
+            ("m2c-legacy-paid-01", "legacy-hash", legacy_result, now, now),
+        )
+
+    from pytest import raises
+    with raises(execution_store.PaidGenerationLimitExceeded, match="每小时请求上限"):
+        execution_store.begin(
+            "m2c-paid-after-migration",
+            "new-hash",
+            paid=True,
+            max_paid_per_hour=1,
+            max_concurrent_paid=1,
+        )
+
+    with raises(LookupError):
+        execution_store.get("m2c-paid-after-migration")
+
