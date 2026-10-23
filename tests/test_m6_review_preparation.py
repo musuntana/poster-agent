@@ -50,6 +50,7 @@ def test_plan_does_not_render_or_create_any_output(tmp_path, monkeypatch):
     assert plan["mode"] == "check"
     assert plan["batch_sku_count"] == 1
     assert plan["expected_review_rows"] == 2
+    assert plan["cohort_id"].startswith("m6-")
     assert plan["human_review_performed"] is False
     assert plan["paid_model_calls"] == 0
     assert not output.exists()
@@ -65,6 +66,9 @@ def test_apply_exports_both_formats_as_unverified(tmp_path, monkeypatch):
     registry = _csv_rows(output / "m6_cohort_registry.csv")
     reviews = _csv_rows(output / "m6_output_reviews.csv")
     assert report["review_rows_created"] == 2
+    assert report["cohort_id"].startswith("m6-")
+    assert registry[0]["cohort_id"] == report["cohort_id"]
+    assert {row["cohort_id"] for row in reviews} == {report["cohort_id"]}
     assert report["missing_output_count"] == 0
     assert registry[0]["source_asset_authorization_status"] == "PENDING"
     assert registry[0]["distinct_sku_verified"] == "NO"

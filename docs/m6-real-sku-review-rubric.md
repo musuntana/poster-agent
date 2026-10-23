@@ -93,7 +93,7 @@ uv run --locked python -m scripts.prepare_m6_review \
 
 脚本直接复制原有的方形 PNG，使用已有只读 `/exports/feed_4x5_native` API 生成原生版。不会修改原海报或生成新版本。生成结果包含 `images/`、`m6_cohort_registry.csv`、`m6_output_reviews.csv` 和 `m6_preparation.json`。
 
-- 初始 `source_asset_authorization_status=PENDING`、`distinct_sku_verified=NO`，不能代表授权或商品独立性得到确认；需人工依据本地证据填写。
+- `cohort_id` 根据完整 M5g batch journal 的 SHA-256 自动生成（`m6-` 加前 12 位），同一批次草稿可保持一致；若账本变化，ID 也随之变化。初始 `source_asset_authorization_status=PENDING`、`distinct_sku_verified=NO`，不能代表授权或商品独立性得到确认；需人工依据本地证据填写。
 - 两种尺寸都预填 `overall_accept=UNVERIFIED`、`overall_reason=NOT_REVIEWED`，审核员与时间为空，绝不伪造人工结论。
 - 某个 4:5 生成失败时仍保留对应输出行，图片路径与哈希为空，原因填 `EXPORT_FAILED:HTTP_422` 等；修复并生成新批次审核包前，不允许从分母删除该 SKU。
 - 生成的 CSV 与图片放在**同一目录**下，评审表中图片路径相对 CSV；不要单独移动 CSV。生成的 CSV 仍是草稿，后续应在此基础上填写人工判断、运行 M5j 和本地 M6 证据门禁。
