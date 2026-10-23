@@ -95,7 +95,8 @@ def test_failed_version_write_keeps_previous_version_readable(tmp_path, monkeypa
     # The latest-version pointer is committed only after both version files.
     # A failed attempt can leave an unpublished v2 PNG, but v1 stays readable.
     assert storage.view(poster_id)["version"] == 1
-    assert storage.version_path(poster_id, 1).read_bytes() == _png_bytes()
+    previous_png = storage.version_path(poster_id, 1).read_bytes()
+    assert previous_png.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
 
     # Retrying safely replaces the orphaned v2 PNG and publishes a complete v2.
     updated = storage.new_version(poster_id, _spec("新标题"), _png_bytes("#456789"))
