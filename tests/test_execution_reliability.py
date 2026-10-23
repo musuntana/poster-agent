@@ -140,6 +140,24 @@ def test_ai_requires_idempotency_key_before_provider_call(tmp_path, monkeypatch,
     assert not (tmp_path / "executions.sqlite3").exists()
 
 
+def test_ai_mode_rejects_invalid_key_before_upload_decode(tmp_path, monkeypatch):
+    execution_db = tmp_path / "executions.sqlite3"
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(execution_db))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+
+    response = client.post(
+        "/api/posters",
+        headers={"Idempotency-Key": "bad"},
+        files={"product": ("broken.png", b"not-an-image", "image/png")},
+        data={**data(), "background_mode": "ai"},
+    )
+
+    assert response.status_code == 422
+    assert "Idempotency-Key" in response.json()["detail"]
+    assert not execution_db.exists()
+    assert not (tmp_path / "posters").exists()
+
+
 def test_concurrent_duplicate_paid_requests_dispatch_provider_once(
     tmp_path, monkeypatch, product_bytes
 ):
