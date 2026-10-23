@@ -4,7 +4,7 @@
 
 本项目面向电商运营，将 **Brief → 人工确认 → 商品图海报生成 → 多版本修改 → OCR/规则验收 → 人工标注和可复现评测** 串成一个单机可运行的工作流。
 
-> **适用范围：本地研究与产品 Demo。** 尚无登录、权限隔离、可靠任务队列、真实商品保真度验证和生产级事务；仅绑定 `127.0.0.1`，不要直接公网部署。真实 Qwen 图片 API 可能产生费用，本地渐变背景不是 AI 生图。
+> **适用范围：本地研究与产品 Demo。** 尚无登录、权限隔离、可靠任务队列、真实商品保真度验证和生产级事务；使用 `app.run_local` 启动，它会拒绝非回环绑定，应用层也会拒绝非 loopback 的直接请求（403）。这些是纵深防护，不是身份认证。不要直接公网部署，也不要用原始 Uvicorn 命令绕过启动检查。真实 Qwen 图片 API 可能产生费用，本地渐变背景不是 AI 生图。
 
 ## 快速启动
 
@@ -19,7 +19,7 @@ cp .env.example .env
 uv run --locked python -m scripts.generate_demo
 uv run --locked python -m pytest -q
 uv run --locked ruff check app scripts evals tests
-uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run --locked python -m app.run_local --reload --port 8000
 ```
 
 项目依赖以 `pyproject.toml` 为唯一声明、`uv.lock` 为可复现版本锁，开发依赖置于 `dev` 组。请用 `uv add` 更新依赖并同时提交锁文件；完整说明见 [uv 使用手册](docs/uv-workflow.md)。
@@ -69,6 +69,8 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 所有自动化质量检查仍需人工最终审核；尚未实现 VLM 修复、SKU 视觉保真验证或所有渠道原生响应式排版。
 
 ## 常用操作
+
+服务仅支持本机访问：`uv run --locked python -m app.run_local --port 8000`。开发时可加 `--reload`。不要用 `uvicorn app.main:app --host 0.0.0.0` 或反向代理/容器端口映射暴露服务；该启动保护不提供身份认证，原始 Uvicorn 命令也能绕过启动器。详见 [本地部署边界](docs/local-only-deployment.md)。
 
 **无需云端 Key：** 网页选择本地背景，生成、修改并导出；`uv run --locked python -m scripts.generate_demo` 可检查本地字体与渲染。
 
