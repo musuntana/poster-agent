@@ -2,7 +2,7 @@
 
 ## Policy
 
-The `ai` background mode can incur third-party model charges. Every request to `POST /api/posters` with `background_mode=ai` must include an `Idempotency-Key` header. The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. A missing or empty key is rejected with HTTP 428 before reading/decoding uploaded images, claiming the ledger, or calling the image provider. Invalid keys are rejected with HTTP 422.
+The `ai` background mode can incur third-party model charges. Every request to `POST /api/posters` with `background_mode=ai` must include an `Idempotency-Key` header. The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. A missing or empty key is rejected with HTTP 428 before reading/decoding uploaded images, claiming the ledger, or calling the image provider. Malformed keys are rejected with HTTP 422 before application-level image decoding or an execution-ledger claim.
 
 Local-background requests may omit the header for legacy API compatibility, although the browser UI sends a key for every create request.
 
