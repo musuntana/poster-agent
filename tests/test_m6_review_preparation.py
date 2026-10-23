@@ -8,7 +8,7 @@ import json
 import pytest
 from PIL import Image
 
-from app import storage
+from app import native_human_reviews, storage
 from scripts import real_sku_batch
 from scripts.prepare_m6_review import PreparationError, prepare_package
 
@@ -89,6 +89,13 @@ def test_apply_exports_both_formats_as_unverified(tmp_path, monkeypatch):
             )
     poster_id = reviews[0]["poster_id"]
     assert storage.view(poster_id)["version"] == 1
+
+    # The M6-reviewed image must match the digest consumed by M5j.
+    native_row = next(row for row in reviews if row["variant_id"] == "feed_4x5_native")
+    native_context = native_human_reviews.context(poster_id, 1, "test-reviewer")
+    assert native_row["output_image_sha256"] == native_context["image_sha256"]
+    assert native_row["source_square_image_sha256"] == native_context["source_image_sha256"]
+    assert native_row["spec_sha256"] == native_context["spec_sha256"]
     assert report["paid_model_calls"] == 0
     assert report["ocr_inference_performed"] is False
 
