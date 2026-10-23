@@ -40,8 +40,11 @@ def test_invalid_image_rejected(tmp_path, monkeypatch):
     assert response.status_code == 422
 
 
-def test_ai_without_key_errors_and_does_not_fall_back(tmp_path, monkeypatch, product_bytes):
-    monkeypatch.setenv('POSTER_DATA_DIR', str(tmp_path))
+def test_ai_without_provider_credentials_errors_and_does_not_fall_back(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv('POSTER_DATA_DIR', str(tmp_path / 'posters'))
+    monkeypatch.setenv('POSTER_EXECUTION_DB', str(tmp_path / 'executions.sqlite3'))
     monkeypatch.delenv('DASHSCOPE_API_KEY', raising=False)
     monkeypatch.delenv('QWEN_IMAGE_ENDPOINT', raising=False)
     response = client.post(
@@ -51,7 +54,7 @@ def test_ai_without_key_errors_and_does_not_fall_back(tmp_path, monkeypatch, pro
         data={'title': '电动牙刷', 'price': '199', 'background_mode': 'ai'},
     )
     assert response.status_code == 502
-    assert len(list(tmp_path.iterdir())) == 0
+    assert not (tmp_path / 'posters').exists()
 
 
 def test_no_path_traversal():
