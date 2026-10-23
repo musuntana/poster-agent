@@ -1,6 +1,6 @@
 # Poster Agent · 电商营销海报生成与验收
 
-> **开源许可：** 项目许可证已确定为 [Apache License 2.0（Apache-2.0）](https://www.apache.org/licenses/LICENSE-2.0)，标准 `LICENSE` 文件正在通过独立 PR 加入。该 PR 合并前，`main` 尚未包含许可证文件。正式发布前仍需核实代码、第三方依赖、字体、素材、示例数据及历史提交的权属和授权；Apache-2.0 不会自动授权你无权再许可的内容。详见 [发布准备清单](docs/open-source-release.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)、[安全披露](SECURITY.md)。
+> **开源许可：** 本项目采用 [Apache License 2.0（Apache-2.0）](https://www.apache.org/licenses/LICENSE-2.0)，完整许可文本见根目录 [`LICENSE`](LICENSE)。正式发布前仍需核实代码、第三方依赖、字体、素材、示例数据及历史提交的权属和授权；Apache-2.0 不会自动授权你无权再许可的内容。详见 [发布准备清单](docs/open-source-release.md)、[贡献指南](CONTRIBUTING.md)、[行为准则](CODE_OF_CONDUCT.md)、[安全披露](SECURITY.md)。
 
 本项目面向电商运营，将 **Brief → 人工确认 → 商品图海报生成 → 多版本修改 → OCR/规则验收 → 人工标注和可复现评测** 串成一个单机可运行的工作流。
 
