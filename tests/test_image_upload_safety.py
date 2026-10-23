@@ -42,8 +42,8 @@ def _png_with_metadata() -> bytes:
     return output.getvalue()
 
 
-def _create(files, *, data=None):
-    return client.post("/api/posters", files=files, data=data or INPUT)
+def _create(files, *, data=None, headers=None):
+    return client.post("/api/posters", files=files, data=data or INPUT, headers=headers)
 
 
 def test_rejects_decompression_bomb_before_ever_invoking_paid_api(
@@ -60,6 +60,7 @@ def test_rejects_decompression_bomb_before_ever_invoking_paid_api(
     response = _create(
         {"product": ("bomb.png", massive, "image/png")},
         data={**INPUT, "background_mode": "ai"},
+        headers={"Idempotency-Key": "test-image-bomb-upload"},
     )
     assert response.status_code == 413, response.text
     assert not list(tmp_path.iterdir())

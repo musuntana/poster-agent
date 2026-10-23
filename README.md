@@ -30,7 +30,7 @@ uv run --locked python -m app.run_local --reload --port 8000
 
 | 模块 | 当前能力 | 可信边界 |
 | --- | --- | --- |
-| M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 10 MiB/1600 万像素上传限制，ICC 色彩先转 sRGB 再移除元数据；仅本地 Demo |
+| M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 10 MiB/1600 万像素限制、ICC→sRGB；原子文件替换与分阶段发布；仅本地 Demo |
 | M2 Brief 与人工审核 | 规则/Qwen 结构化需求、LangGraph SQLite Checkpoint、规格人工确认 | 本地单进程工作流，没有登录和生产并发隔离 |
 | M2 执行可靠性 | AI 生图强制幂等键、最近执行历史/海报恢复、默认每小时 20 次与 1 路并发上限 | 单机 Demo 护栏；不等于跨系统 Exactly-Once 或用户级配额；UNKNOWN 不自动重试 |
 | M3 Acceptance Gate | 文案/OCR、品牌词表、价格区域位置与冲突检查、报告 SHA-256、可视化诊断 PNG | OCR 缺失与不确定必须标 `UNVERIFIED`，不可冒充 PASS |

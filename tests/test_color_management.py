@@ -77,6 +77,7 @@ def test_invalid_icc_is_rejected_before_paid_background(
     response = client.post(
         "/api/posters",
         data={**FORM, "background_mode": "ai"},
+        headers={"Idempotency-Key": "test-invalid-icc-upload"},
         files={"product": ("bad-color.png", damaged, "image/png")},
     )
     assert response.status_code == 422, response.text
