@@ -87,7 +87,7 @@ def test_existing_sample_is_reused_only_with_manifest_and_attribution(tmp_path):
 
 def test_existing_sample_rejects_empty_or_oversized_manifest(tmp_path):
     manifest = tmp_path / "real_skus.csv"
-    manifest.write_text("sku_id,product_image,title,price\\n", encoding="utf-8")
+    manifest.write_text("sku_id,product_image,title,price\n", encoding="utf-8")
     (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
     with pytest.raises(ValueError, match="1..100"):
         _existing_sample(tmp_path)
@@ -170,6 +170,8 @@ def test_import_sample_publishes_complete_cohort_atomically(tmp_path, monkeypatc
     assert (output / "images" / "ABO-item-1.jpg").read_bytes() == b"fixture-image"
     assert (output / "real_skus.csv").is_file()
     assert (output / "PUBLIC_DATASET_ATTRIBUTION.md").is_file()
+    assert "Manifest SHA-256: `" in (output / "PUBLIC_DATASET_ATTRIBUTION.md").read_text(encoding="utf-8")
+    assert result["manifest_sha256"] == hashlib.sha256((output / "real_skus.csv").read_bytes()).hexdigest()
     assert result["manifest"] == str(output / "real_skus.csv")
     assert result["attribution"] == str(output / "PUBLIC_DATASET_ATTRIBUTION.md")
     assert not list(tmp_path.glob(".abo-sample-*"))
