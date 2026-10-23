@@ -1,6 +1,15 @@
 """Download a small CC BY 4.0 ABO cohort and optionally generate posters locally."""
 from __future__ import annotations
-import argparse, csv, gzip, hashlib, io, json, re, sys, urllib.error, urllib.request
+import argparse
+import csv
+import gzip
+import hashlib
+import io
+import json
+import re
+import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Iterator
 from PIL import Image, UnidentifiedImageError
