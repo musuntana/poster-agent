@@ -125,11 +125,12 @@ uv run --locked python -m scripts.validate_m6_cohort \
   --registry data/real_trial/m6_cohort_registry.csv \
   --journal data/eval_runs/m6_real_sku_batch_001/batch_import_results.json \
   --reviews data/real_trial/m6_output_reviews.csv \
+  --native-manifest data/eval_runs/m6_native_trial_001/native_trial_manifest.csv \
   --readiness data/eval_runs/m6_native_trial_001/native_trial_readiness.json \
   --output data/eval_runs/m6_validation_001/m6_validation_report.json
 ```
 
-脚本会记录 manifest、journal、registry、review CSV 和 M5j readiness 的 SHA-256，检查至少 20 个 SKU、素材授权状态、SKU 集合一致性、每 SKU 两种输出、最新版本、规格/图片哈希与尺寸。缺失输出必须保留为 `UNVERIFIED`，仍计入应有输出分母，并阻塞通过。
+脚本会记录 manifest、journal、registry、review CSV、M5j native manifest 与 readiness 的 SHA-256，检查至少 20 个 SKU、素材授权状态、SKU 集合一致性、每 SKU 两种输出、最新版本、规格/图片哈希与尺寸，并要求原生 4:5 人工评审 PNG 的哈希与 M5j `native_image_sha256` 一致。缺失输出必须保留为 `UNVERIFIED`，仍计入应有输出分母，并阻塞通过。
 
 ## 4. 汇总报告模板
 
