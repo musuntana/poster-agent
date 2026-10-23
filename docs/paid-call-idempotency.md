@@ -50,7 +50,7 @@ full crash-durability guarantee, or cross-provider exactly-once billing.
 
 The UI fingerprints uploaded file bytes with SHA-256 (the digest is stored locally, not the file), so files with the same name/size/timestamp but different contents are not treated as the same request. While a request is RUNNING or UNKNOWN, the UI reuses its key after retries. After a request is confirmed COMPLETED, an intentional new submit gets a fresh key even when the form and files are identical.
 
-- `GET /api/executions?limit=10` returns a bounded list of recent execution summaries, including UNKNOWN records, timestamps, and minimal completed-poster identifiers. The limit must be between 1 and 50; the endpoint does not return full request/result specifications.
+- `GET /api/executions?limit=10&offset=0&status=UNKNOWN` returns a bounded, filterable page of execution summaries. The optional `status` filter accepts `RUNNING`, `COMPLETED`, or `UNKNOWN`; `limit` is 1–50 and `offset` is 0–10000. Responses include `items`, `limit`, `offset`, `status`, and `has_more` for pagination, without full request/result specifications. The web UI supports state filtering and older-history browsing. Offset pagination may shift as runs finish, so refresh before navigating.
 - The UI can query a listed key or restore a completed poster from the history list.
 - The hourly guardrail backfills completed legacy AI runs from stored result metadata on first use. Older UNKNOWN rows without background-mode metadata cannot be classified reliably.
 
