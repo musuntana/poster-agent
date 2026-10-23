@@ -7,6 +7,7 @@
 | 内容 | 文档 | 适用范围 |
 | --- | --- | --- |
 | 平台与配置入口 | [根 README](../README.md) | 当前运行、限制、模块、下一步 |
+| 本地启动与网络暴露边界 | [local-only-deployment.md](local-only-deployment.md) | 仅回环 IP 启动器、禁止非本机暴露、已知绕过边界 |
 | uv 开发环境与锁依赖 | [uv-workflow.md](uv-workflow.md) | Python 3.12 / pyproject.toml / uv.lock、开发组、按需 OCR |
 | 公开仓库与开源发布准备（M5k） | [open-source-release.md](open-source-release.md) | 仓库已 Public；许可证、源码/素材授权、历史与敏感数据检查仍待完成 |
 | GitHub Actions 节省额度 | [ci-budget.md](ci-budget.md) | PR Ready 一次 quick；full 与真实 OCR 手动触发 |
