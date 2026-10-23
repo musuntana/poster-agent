@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused improvement to Poster Agent
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user workflow or limitation, not just a preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected outcome
+      description: Explain how a user would know the change works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Existing tools or alternatives
+      description: Mention mature libraries, official integrations, or workarounds already considered.
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and constraints
+      description: Include reproducible examples, compatibility constraints, and cost/privacy considerations.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Scope checks
+      options:
+        - label: This request does not require sharing secrets, private customer data, or unauthorized assets.
+          required: true
