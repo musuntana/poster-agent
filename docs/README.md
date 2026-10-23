@@ -28,6 +28,7 @@
 | 本地原生 4:5 审核队列 | [m5h-local-review-queue.md](m5h-local-review-queue.md) | 最新版状态/标题、打开已有预览与人工审核；不运行 OCR |
 | 按 M5g 导入批次筛选审核队列 | [m5i-batch-review-scope.md](m5i-batch-review-scope.md) | 浏览器本地读取导入账本，SKU 级筛选已存在的审核队列 |
 | M5g 批次独立评测 | [m5j-batch-evaluation.md](m5j-batch-evaluation.md) | 指定导入账本，逐 SKU 最新版本评分，禁止外部海报污染分母 |
+| M6 真实 SKU 评测协议 | [m6-real-sku-review-rubric.md](m6-real-sku-review-rubric.md) | cohort 模板、授权治理、逐输出人工验收与本地证据门禁 |
 
 ## 证据边界
 
