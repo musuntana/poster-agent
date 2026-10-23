@@ -421,7 +421,7 @@ async function refreshExecutionHistory(){
       host.appendChild(row);
     }
     $('executionHistoryPrev').disabled=offset===0;
-    $('executionHistoryNext').disabled=!obj.has_more;
+    $('executionHistoryNext').disabled=!obj.has_more || offset+limit>10000;
     $('executionHistoryRange').textContent=items.length
       ? '第 '+(offset+1)+'–'+(offset+items.length)+' 条'+(obj.has_more?'，还有更多':'')
       : '当前页无记录';
