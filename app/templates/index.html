@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Poster Agent · M5h</title>
 <style>
-:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}.style-presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px}.style-preset{display:flex;flex-direction:column;align-items:stretch;gap:5px;text-align:left;background:#1b2a40;color:#e9f3ff;border:2px solid transparent;padding:7px;border-radius:10px;min-width:0}.style-preset[aria-pressed="true"]{border-color:#84c9ff;background:#263c54}.style-preset:focus-visible{outline:3px solid #b7e2ff;outline-offset:2px}.style-swatch{height:52px;border-radius:6px}.style-name{font-size:12px;font-weight:700}.style-hint{font-size:11px;color:#b7c9de}@media(max-width:840px){.shell{grid-template-columns:1fr}}
+:root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.execution-history{display:grid;gap:8px;margin-top:10px}.execution-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:#0a1627;border:1px solid #2d4157;border-radius:8px}.execution-row .summary{font-size:12px;color:#b7c9de;overflow-wrap:anywhere;flex:1;min-width:0}.execution-row .actions{gap:6px}.execution-row button{padding:6px 9px;font-size:12px}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}.style-presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px}.style-preset{display:flex;flex-direction:column;align-items:stretch;gap:5px;text-align:left;background:#1b2a40;color:#e9f3ff;border:2px solid transparent;padding:7px;border-radius:10px;min-width:0}.style-preset[aria-pressed="true"]{border-color:#84c9ff;background:#263c54}.style-preset:focus-visible{outline:3px solid #b7e2ff;outline-offset:2px}.style-swatch{height:52px;border-radius:6px}.style-name{font-size:12px;font-weight:700}.style-hint{font-size:11px;color:#b7c9de}@media(max-width:840px){.shell{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -58,8 +58,9 @@
 <div class="row"><label>画面风格</label><input name="style" maxlength="80" value="蓝色科技风"></div>
 <div class="row"><label>背景模式</label><select name="background_mode"><option value="local">本地渐变（无需 API Key，不是 AI）</option><option value="ai">真实 Qwen-Image（需要 API Key，会计费）</option></select></div>
 <div class="actions"><button id="generate" type="submit">生成海报</button><span id="createStatus" class="tip">上传商品图后生成</span></div>
-<div class="actions" style="margin-top:12px"><button id="checkExecution" type="button" class="secondary">查询最近执行状态</button></div>
+<div class="actions" style="margin-top:12px"><button id="checkExecution" type="button" class="secondary">查询最近执行状态</button><button id="refreshExecutionHistory" type="button" class="secondary">刷新执行历史</button></div>
 <p id="executionStatus" class="tip">生成请求会保存本地幂等键。网络断开时先查状态，不重复付费生图。</p>
+<div id="executionHistory" class="execution-history" aria-live="polite">读取最近执行记录…</div>
 </form>
 <p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
 </section>
@@ -282,21 +283,100 @@ $('rejectBrief').addEventListener('click',()=>decide(false));
     showRun(await response.json(),true);
   } catch(e){$('compileStatus').textContent='恢复审核任务失败，可刷新重试';}
 })();
-async function refreshExecutionStatus(){
+async function refreshExecutionStatus(keyOverride=null){
   let saved=null;
   try{saved=JSON.parse(localStorage.getItem('poster-last-execution')||'null')}catch(e){}
-  if(!saved?.key){$('executionStatus').textContent='尚无生成执行记录';return;}
+  const key=keyOverride || saved?.key;
+  if(!key){$('executionStatus').textContent='尚无生成执行记录';return;}
   try{
-    const res=await fetch('/api/executions/'+encodeURIComponent(saved.key));
+    const res=await fetch('/api/executions/'+encodeURIComponent(key));
     const obj=await res.json();
     if(!res.ok)throw Error(errorText(obj));
+    // Update only the execution that is still current; avoid racing a newer submit.
+    let latest=null;
+    try{latest=JSON.parse(localStorage.getItem('poster-last-execution')||'null')}catch(e){}
+    if(latest?.key===key){
+      localStorage.setItem('poster-last-execution',JSON.stringify({...latest,status:obj.status}));
+    }
     const hint=obj.status==='UNKNOWN'?'：结果未知，请确认服务端记录后再决定是否新建生成'
-      :obj.status==='RUNNING'?'：可能正在调用生图模型，请勿重复提交':'：已有已完成结果';
-    $('executionStatus').textContent='执行 '+saved.key+' · '+obj.status+hint;
+      :obj.status==='RUNNING'?'：可能正在调用生图模型，请勿重复提交':'：已有已完成结果；再次主动生成会创建新执行';
+    $('executionStatus').textContent='执行 '+key+' · '+obj.status+hint;
   }catch(err){$('executionStatus').textContent='读取执行状态失败：'+err.message;}
 }
-$('checkExecution').addEventListener('click',refreshExecutionStatus);
+async function restoreExecutionPoster(posterId){
+  try{
+    const res=await fetch('/api/posters/'+encodeURIComponent(posterId));
+    const obj=await res.json();
+    if(!res.ok)throw Error(errorText(obj));
+    display(obj);
+    $('createStatus').textContent='已从执行历史恢复海报 '+posterId;
+    $('createStatus').className='tip good';
+  }catch(err){
+    $('executionStatus').textContent='恢复海报失败：'+err.message;
+  }
+}
+async function refreshExecutionHistory(){
+  const host=$('executionHistory');
+  host.textContent='正在读取最近执行记录…';
+  try{
+    const res=await fetch('/api/executions?limit=10');
+    const obj=await res.json();
+    if(!res.ok)throw Error(errorText(obj));
+    host.replaceChildren();
+    if(!obj.items.length){
+      host.textContent='尚无执行记录';
+      return;
+    }
+    for(const item of obj.items){
+      const row=document.createElement('div');
+      row.className='execution-row';
+      const summary=document.createElement('span');
+      summary.className='summary';
+      const posterInfo=item.poster_id
+        ? ' · 海报 '+item.poster_id.slice(0,8)+'… v'+item.version
+        : '';
+      summary.textContent=item.status+' · '+item.idempotency_key+' · '+item.updated_at+posterInfo;
+      row.appendChild(summary);
+      const actions=document.createElement('span');
+      actions.className='actions';
+      const check=document.createElement('button');
+      check.type='button';
+      check.className='secondary';
+      check.textContent='查状态';
+      check.addEventListener('click',()=>refreshExecutionStatus(item.idempotency_key));
+      actions.appendChild(check);
+      if(item.poster_id){
+        const restore=document.createElement('button');
+        restore.type='button';
+        restore.className='secondary';
+        restore.textContent='恢复海报';
+        restore.addEventListener('click',()=>restoreExecutionPoster(item.poster_id));
+        actions.appendChild(restore);
+      }
+      row.appendChild(actions);
+      host.appendChild(row);
+    }
+  }catch(err){
+    host.textContent='读取执行历史失败：'+err.message;
+  }
+}
+$('checkExecution').addEventListener('click',()=>{refreshExecutionStatus();refreshExecutionHistory();});
+$('refreshExecutionHistory').addEventListener('click',refreshExecutionHistory);
 refreshExecutionStatus();
+refreshExecutionHistory();
+async function fingerprintFormData(body){
+  const entries=[];
+  for(const [name,value] of body.entries()){
+    if(value instanceof File){
+      const digest=await crypto.subtle.digest('SHA-256',await value.arrayBuffer());
+      const sha256=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+      entries.push([name,{name:value.name,size:value.size,type:value.type,sha256}]);
+    }else{
+      entries.push([name,value]);
+    }
+  }
+  return JSON.stringify(entries);
+}
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
 function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
 // M5i: import the M5g result journal in the browser, never POST it.
@@ -570,13 +650,21 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
     return;
   }
   const body=new FormData(e.target);
-  const fp=JSON.stringify([...body.entries()].map(([name,value])=>[
-    name,value instanceof File ? [value.name,value.size,value.lastModified,value.type] : value
-  ]));
+  let fp;
+  try{
+    fp=await fingerprintFormData(body);
+  }catch(err){
+    $('createStatus').textContent='无法计算请求指纹，请刷新页面后重试：'+err.message;
+    $('createStatus').className='tip bad';
+    return;
+  }
   let stored=null;
   try{stored=JSON.parse(localStorage.getItem('poster-last-execution')||'null')}catch(e){}
-  const key=(stored && stored.fp===fp) ? stored.key : crypto.randomUUID();
-  localStorage.setItem('poster-last-execution',JSON.stringify({key,fp}));
+  // Reuse a key only for an unfinished/ambiguous logical request. Once the
+  // prior request is completed, an intentional new submit gets a fresh key.
+  const key=(stored && stored.fp===fp && stored.status!=='COMPLETED')
+    ? stored.key : crypto.randomUUID();
+  localStorage.setItem('poster-last-execution',JSON.stringify({key,fp,status:'PENDING'}));
   $('generate').disabled=true;
   $('createStatus').textContent='正在生成，AI 模式可能耗时较久…';
   $('createStatus').className='tip';
@@ -585,8 +673,9 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
       headers:{'Idempotency-Key':key},body});
     const json=await res.json();
     if(!res.ok)throw Error(errorText(json));
+    localStorage.setItem('poster-last-execution',JSON.stringify({key,fp,status:'COMPLETED'}));
     display(json);
-    $('createStatus').textContent='生成成功（同一请求重复提交将复用结果）';
+    $('createStatus').textContent='生成成功；主动再次生成会创建新执行，网络中断重试会复用原键';
     $('createStatus').className='tip good';
   }catch(err){
     $('createStatus').textContent=err.message;
@@ -594,6 +683,7 @@ $('createForm').addEventListener('submit',async e=>{e.preventDefault();
   }finally{
     $('generate').disabled=false;
     refreshExecutionStatus();
+    refreshExecutionHistory();
   }
 });
 $('editForm').addEventListener('submit',async e=>{
