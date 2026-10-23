@@ -117,7 +117,6 @@ def test_unrenderable_copy_rejected_before_claim_or_paid_model(
     assert client.get("/api/executions/m2c-invalid-layout-key").status_code == 404
 
 
-
 def test_ai_requires_idempotency_key_before_provider_call(tmp_path, monkeypatch, product_bytes):
     monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
     monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
