@@ -44,8 +44,12 @@ def test_ai_without_key_errors_and_does_not_fall_back(tmp_path, monkeypatch, pro
     monkeypatch.setenv('POSTER_DATA_DIR', str(tmp_path))
     monkeypatch.delenv('DASHSCOPE_API_KEY', raising=False)
     monkeypatch.delenv('QWEN_IMAGE_ENDPOINT', raising=False)
-    response = client.post('/api/posters', files={'product': ('sku.png', product_bytes, 'image/png')},
-                           data={'title': '电动牙刷', 'price': '199', 'background_mode': 'ai'})
+    response = client.post(
+        '/api/posters',
+        headers={'Idempotency-Key': 'api-ai-missing-provider-key'},
+        files={'product': ('sku.png', product_bytes, 'image/png')},
+        data={'title': '电动牙刷', 'price': '199', 'background_mode': 'ai'},
+    )
     assert response.status_code == 502
     assert len(list(tmp_path.iterdir())) == 0
 
