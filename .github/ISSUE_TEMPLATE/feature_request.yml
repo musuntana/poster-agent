@@ -1,13 +1,25 @@
-name: Feature request
-description: Propose a focused improvement to Poster Agent
+name: Feature request / 功能建议
+description: Propose a focused improvement grounded in a user need and verifiable outcome
 title: "[Feature]: "
 labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        First check existing Poster Agent capabilities, mature open-source projects, and official integrations.
+        Prefer integrating proven capabilities over rebuilding common functionality from scratch.
   - type: textarea
     id: problem
     attributes:
-      label: Problem to solve
-      description: Describe the user workflow or limitation, not just a preferred implementation.
+      label: User problem
+      description: Describe the user workflow or limitation, not only a preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: user_scenario
+    attributes:
+      label: User scenario and current workaround
+      description: Who needs this, and which step is costly or blocked?
     validations:
       required: true
   - type: textarea
@@ -15,6 +27,13 @@ body:
     attributes:
       label: Expected outcome
       description: Explain how a user would know the change works.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List 2-3 testable or manually verifiable conditions.
     validations:
       required: true
   - type: textarea
@@ -27,8 +46,15 @@ body:
   - type: textarea
     id: evidence
     attributes:
-      label: Evidence and constraints
-      description: Include reproducible examples, compatibility constraints, and cost/privacy considerations.
+      label: Evidence and examples
+      description: Include reproducible examples or links to public, authorized references; do not attach private customer data.
+    validations:
+      required: false
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Risks, costs, and non-goals
+      description: Include privacy, asset authorization, model/API costs, Mac ARM64 support, and production boundaries where relevant.
     validations:
       required: false
   - type: checkboxes

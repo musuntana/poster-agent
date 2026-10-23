@@ -1,18 +1,19 @@
-name: Bug report
-description: Report a reproducible defect in Poster Agent
+name: Bug report / 缺陷反馈
+description: Report a reproducible defect without exposing private data
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Do not include API keys, customer images, private batch journals, or personal data.
-        This project is a local demo; simulated and real-model results must be distinguished.
+        Do not include API keys, customer images, private batch journals, personal data, or vulnerability exploitation details.
+        This project is a local demo; synthetic/mock evidence must be distinguished from real-model and human-review evidence.
+        For security issues, follow SECURITY.md and do not post exploit details publicly.
   - type: input
     id: version
     attributes:
       label: Commit or version
-      description: Include the commit SHA when possible.
+      description: Include the exact commit SHA when possible.
       placeholder: "main @ <commit-sha>"
     validations:
       required: true
@@ -29,6 +30,42 @@ body:
         - Other
     validations:
       required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "3.12.x"
+    validations:
+      required: false
+  - type: input
+    id: uv_version
+    attributes:
+      label: uv version
+      placeholder: "uv --version"
+    validations:
+      required: false
+  - type: dropdown
+    id: background_mode
+    attributes:
+      label: Background mode
+      options:
+        - local
+        - ai
+        - unknown
+    validations:
+      required: false
+  - type: dropdown
+    id: ocr_status
+    attributes:
+      label: OCR execution status
+      options:
+        - Not run
+        - Mock or synthetic
+        - Real PaddleOCR inference
+        - Failed or unavailable
+        - Unknown
+    validations:
+      required: false
   - type: textarea
     id: reproduce
     attributes:
@@ -53,7 +90,7 @@ body:
     id: evidence
     attributes:
       label: Sanitized logs and evidence
-      description: Include exact commands and test results. Remove secrets and private paths.
+      description: Include exact commands and test results. Remove secrets, customer data, and private paths.
     validations:
       required: false
   - type: checkboxes
