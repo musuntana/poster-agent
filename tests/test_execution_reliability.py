@@ -1,7 +1,12 @@
 """M2c proof: once-only claim, durable event trail, and UNKNOWN on uncertain paid call."""
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app import execution_store
 
@@ -110,3 +115,73 @@ def test_unrenderable_copy_rejected_before_claim_or_paid_model(
     assert "副标题" in response.json()["detail"]
     assert calls["count"] == 0
     assert client.get("/api/executions/m2c-invalid-layout-key").status_code == 404
+
+
+
+def test_ai_requires_idempotency_key_before_provider_call(tmp_path, monkeypatch, product_bytes):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    calls = {"count": 0}
+
+    async def unexpected_paid_call(style):
+        calls["count"] += 1
+        raise AssertionError("AI mode must reject a missing idempotency key before provider dispatch")
+
+    monkeypatch.setattr("app.main.generate_ai_background", unexpected_paid_call)
+    response = client.post(
+        "/api/posters",
+        files={"product": ("sku.png", product_bytes, "image/png")},
+        data={**data(), "background_mode": "ai"},
+    )
+
+    assert response.status_code == 428, response.text
+    assert "Idempotency-Key" in response.json()["detail"]
+    assert calls["count"] == 0
+    assert not (tmp_path / "posters").exists()
+
+
+def test_concurrent_duplicate_paid_requests_dispatch_provider_once(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    provider_started = Event()
+    release_provider = Event()
+    calls = {"count": 0}
+
+    from app.compositor import local_background
+
+    async def delayed_provider(style):
+        calls["count"] += 1
+        provider_started.set()
+        released = await asyncio.to_thread(release_provider.wait, 8)
+        assert released, "test did not release the simulated provider"
+        return local_background(style)
+
+    monkeypatch.setattr("app.main.generate_ai_background", delayed_provider)
+    first_client = TestClient(app)
+    second_client = TestClient(app)
+
+    def paid_post(test_client):
+        return test_client.post(
+            "/api/posters",
+            headers={"Idempotency-Key": "m2c-concurrent-paid-key"},
+            files={"product": ("sku.png", product_bytes, "image/png")},
+            data={**data(), "background_mode": "ai"},
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first_future = pool.submit(paid_post, first_client)
+        try:
+            assert provider_started.wait(5), "first request never reached the provider"
+            duplicate = paid_post(second_client)
+        finally:
+            release_provider.set()
+        first = first_future.result(timeout=10)
+
+    assert first.status_code == 201, first.text
+    assert duplicate.status_code == 409, duplicate.text
+    assert calls["count"] == 1
+    status = second_client.get("/api/executions/m2c-concurrent-paid-key")
+    assert status.status_code == 200
+    assert status.json()["status"] == "COMPLETED"
