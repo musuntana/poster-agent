@@ -76,6 +76,29 @@ M5c 现有原生 4:5 审核界面保存的原始值是 `correct`、`defective`�
 
 M6 输出评审表中的 `overall_accept` 是**单独的人工作出的整体接收/拒绝判断**，不能用字段规则自动代替。可额外计算 `derived_overall_from_fields` 作为一致性诊断：任一适用关键字段 FAIL 则派生 FAIL；所有适用字段均 PASS 则派生 PASS；其余为 UNVERIFIED。它不能覆盖人工 `overall_accept`；两者不一致时必须计数、复核并记录理由。若只由一位审核员标注，应明确报告限制；多个审核员分别导出、分别计分，不把分歧合并成未经验证的“专家共识”。人工的 UNVERIFIED 与 OCR 未运行/失败是两类不同缺口，必须分开统计。
 
+### M6 离线审核包（复用已有导出接口）
+
+M5g `--apply` 完成后，可先以只读模式检查批次，再显式生成待审核文件。**不会重新调用付费模型，也不会自动标记人工通过。** 执行目录只能使用全新路径，防止覆盖已有人工评审和图片。
+
+```bash
+uv run --locked python -m scripts.prepare_m6_review \
+  --journal data/eval_runs/m6_real_sku_batch_001/batch_import_results.json \
+  --output-dir data/eval_runs/m6_review_package_001
+
+uv run --locked python -m scripts.prepare_m6_review \
+  --journal data/eval_runs/m6_real_sku_batch_001/batch_import_results.json \
+  --output-dir data/eval_runs/m6_review_package_001 \
+  --apply
+```
+
+脚本直接复制原有的方形 PNG，使用已有只读 `/exports/feed_4x5_native` API 生成原生版。不会修改原海报或生成新版本。生成结果包含 `images/`、`m6_cohort_registry.csv`、`m6_output_reviews.csv` 和 `m6_preparation.json`。
+
+- 初始 `source_asset_authorization_status=PENDING`、`distinct_sku_verified=NO`，不能代表授权或商品独立性得到确认；需人工依据本地证据填写。
+- 两种尺寸都预填 `overall_accept=UNVERIFIED`、`overall_reason=NOT_REVIEWED`，审核员与时间为空，绝不伪造人工结论。
+- 某个 4:5 生成失败时仍保留对应输出行，图片路径与哈希为空，原因填 `EXPORT_FAILED:HTTP_422` 等；修复并生成新批次审核包前，不允许从分母删除该 SKU。
+- 生成的 CSV 与图片放在**同一目录**下，评审表中图片路径相对 CSV；不要单独移动 CSV。生成的 CSV 仍是草稿，后续应在此基础上填写人工判断、运行 M5j 和本地 M6 证据门禁。
+- 目录位于 `data/eval_runs/` 并被 Git 忽略。不要把图片、填充后的 CSV、源路径和授权证明提交到公开仓库。
+
 ## 3. 执行步骤
 
 1. 用 M5g 进行 dry-run 预检；核对 CSV、路径及唯一 SKU ID 后显式 `--apply`。先使用本地免费背景，**不调用付费模型**。
