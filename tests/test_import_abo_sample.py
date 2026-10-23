@@ -41,7 +41,7 @@ def test_existing_sample_is_reused_only_with_manifest_and_attribution(tmp_path):
 
 def test_existing_sample_rejects_empty_or_oversized_manifest(tmp_path):
     manifest = tmp_path / "real_skus.csv"
-    manifest.write_text("sku_id\\n", encoding="utf-8")
+    manifest.write_text("sku_id\n", encoding="utf-8")
     (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
     with pytest.raises(ValueError, match="1..100"):
         _existing_sample(tmp_path)
