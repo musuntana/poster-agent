@@ -196,6 +196,12 @@ async def create_poster(
             ),
         )
 
+    if spec.background_mode == "ai":
+        try:
+            execution_store.validate_key(idempotency_key)
+        except execution_store.InvalidExecutionKey as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     # M2b: creating an image from an approved Brief must use exactly the
     # confirmed structured specification. Existing manually-filled M1 requests
     # without review_run_id remain supported.
