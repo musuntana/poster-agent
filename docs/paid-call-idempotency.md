@@ -2,9 +2,9 @@
 
 ## Why this is required
 
-The `ai` background mode can invoke a paid image provider. Every such request must include an `Idempotency-Key`. The API rejects a missing or empty key with HTTP 428 before reading or decoding uploaded image bytes, claiming an execution, or calling the provider.
+The `ai` background mode can invoke a paid image provider. Every such request must include an `Idempotency-Key`. The API rejects a missing or empty key with HTTP 428 before application-level image reading/decoding, claiming an execution, or calling the provider. FastAPI still parses the multipart request body before invoking the endpoint.
 
-The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. Invalid syntax returns HTTP 422. Local deterministic rendering remains backward-compatible without the header.
+The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. Invalid syntax returns HTTP 422 before application-level image decoding or an execution-ledger claim. Local deterministic rendering remains backward-compatible without the header.
 
 ## Client rules
 
@@ -19,7 +19,7 @@ The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. Inv
 
 | Condition | Behavior |
 | --- | --- |
-| AI mode, key missing or empty | HTTP 428 before reading upload bytes, ledger claim, or provider call |
+| AI mode, key missing or empty | HTTP 428 before application-level image reading/decoding, ledger claim, or provider call |
 | Invalid key syntax | HTTP 422 |
 | Same key and same input, prior result completed | Return the original result; do not generate another poster |
 | Same key with different input | HTTP 409 |
