@@ -40,6 +40,11 @@ def _validate(key: str) -> None:
         raise InvalidExecutionKey("Idempotency-Key 只能包含 8-128 位字母、数字、下划线和短横线")
 
 
+def validate_key(key: str) -> None:
+    """Validate an idempotency key without opening or mutating the execution ledger."""
+    _validate(key)
+
+
 @contextmanager
 def _connect():
     path = Path(os.getenv("POSTER_EXECUTION_DB", "data/executions.sqlite3")).resolve()
