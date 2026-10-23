@@ -90,6 +90,7 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
     batch.run_batch(manifest, output_dir, apply=True)
     journal_path = output_dir / "batch_import_results.json"
     journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    cohort_id = "m6-" + _sha(journal_path)[:12]
 
     registry_rows = []
     review_rows = []
@@ -119,7 +120,7 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
             "action": "synthetic test fixture",
         })
         registry_rows.append({
-            "cohort_id": "synthetic-test-cohort",
+            "cohort_id": cohort_id,
             "sku_id": sku,
             "product_category": "care" if i % 2 == 0 else "home",
             "product_family_id": f"family-{i + 1}",
@@ -134,7 +135,7 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
             "notes": "",
         })
         common = {
-            "cohort_id": "synthetic-test-cohort",
+            "cohort_id": cohort_id,
             "sku_id": sku,
             "poster_id": poster_id,
             "source_version": str(version),
@@ -224,6 +225,24 @@ def test_valid_synthetic_bundle_passes_without_quality_score(tmp_path, monkeypat
     assert report["ocr_inference_performed"] is False
     assert report["paid_model_calls"] == 0
     assert report["input_sha256"]["batch_journal"] == _sha(bundle["journal"])
+
+
+def test_cohort_id_must_bind_current_journal_sha(tmp_path, monkeypatch):
+    bundle = _bundle(tmp_path, monkeypatch)
+    wrong_id = "m6-" + "0" * 12
+    for row in bundle["registry_rows"]:
+        row["cohort_id"] = wrong_id
+    for row in bundle["review_rows"]:
+        row["cohort_id"] = wrong_id
+    _write_csv(bundle["registry"], REGISTRY_FIELDS, bundle["registry_rows"])
+    _write_csv(bundle["reviews"], REVIEW_FIELDS, bundle["review_rows"])
+
+    report = _validate(bundle)
+    assert report["status"] == "BLOCKED"
+    assert any(
+        "cohort_id 必须由当前 M5g journal SHA-256 派生" in error
+        for error in report["errors"]
+    )
 
 
 def test_registry_authorization_must_be_explicit(tmp_path, monkeypatch):
