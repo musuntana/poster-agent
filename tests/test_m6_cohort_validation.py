@@ -34,6 +34,11 @@ REVIEW_FIELDS = [
     "original_price_position", "cta", "composition", "overall_accept",
     "overall_reason", "reviewed_at_utc",
 ]
+NATIVE_MANIFEST_FIELDS = [
+    "poster_id", "version", "sku_id", "status", "definite_labels",
+    "ocr_text_labels", "unsure_labels", "product_sha256",
+    "native_image_sha256", "action",
+]
 
 
 def _sha(path: Path) -> str:
@@ -88,6 +93,7 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
 
     registry_rows = []
     review_rows = []
+    native_manifest_rows = []
     for i, item in enumerate(manifest_rows):
         sku = item["sku_id"]
         journal_row = journal["rows"][sku]
@@ -99,6 +105,19 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
         spec_sha = _sha(spec_path)
         native_path = tmp_path / "native" / f"{sku}.png"
         _png(native_path, (1080, 1350), (120, 50 + i, 90))
+        native_sha = _sha(native_path)
+        native_manifest_rows.append({
+            "poster_id": poster_id,
+            "version": str(version),
+            "sku_id": sku,
+            "status": "READY",
+            "definite_labels": "8",
+            "ocr_text_labels": "5",
+            "unsure_labels": "0",
+            "product_sha256": journal_row["product_sha256"],
+            "native_image_sha256": native_sha,
+            "action": "synthetic test fixture",
+        })
         registry_rows.append({
             "cohort_id": "synthetic-test-cohort",
             "sku_id": sku,
@@ -148,13 +167,15 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
             **common,
             "variant_id": "feed_4x5_native",
             "output_image_path": str(native_path),
-            "output_image_sha256": _sha(native_path),
+            "output_image_sha256": native_sha,
         })
 
     registry_path = tmp_path / "m6_cohort_registry.csv"
     reviews_path = tmp_path / "m6_output_reviews.csv"
+    native_manifest_path = tmp_path / "native_trial_manifest.csv"
     _write_csv(registry_path, REGISTRY_FIELDS, registry_rows)
     _write_csv(reviews_path, REVIEW_FIELDS, review_rows)
+    _write_csv(native_manifest_path, NATIVE_MANIFEST_FIELDS, native_manifest_rows)
     readiness_path = tmp_path / "native_trial_readiness.json"
     readiness = {
         "schema_version": "1.0",
@@ -174,9 +195,11 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
         "registry": registry_path,
         "journal": journal_path,
         "reviews": reviews_path,
+        "native_manifest": native_manifest_path,
         "readiness": readiness_path,
         "registry_rows": registry_rows,
         "review_rows": review_rows,
+        "native_manifest_rows": native_manifest_rows,
         "readiness_data": readiness,
     }
 
@@ -184,7 +207,8 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
 def _validate(bundle: dict, *, min_skus: int = 2) -> dict:
     return validate_bundle(
         bundle["manifest"], bundle["registry"], bundle["journal"],
-        bundle["reviews"], bundle["readiness"], min_skus=min_skus,
+        bundle["reviews"], bundle["native_manifest"], bundle["readiness"],
+        min_skus=min_skus,
     )
 
 
@@ -256,3 +280,13 @@ def test_report_path_does_not_overwrite_previous_evidence(tmp_path):
     report.write_text('{"status":"PASS"}', encoding="utf-8")
     with pytest.raises(M6ValidationError, match="已存在"):
         _safe_report_destination(report, (tmp_path / "manifest.csv",))
+
+def test_native_manifest_hash_must_match_reviewed_native_png(tmp_path, monkeypatch):
+    bundle = _bundle(tmp_path, monkeypatch)
+    bundle["native_manifest_rows"][0]["native_image_sha256"] = "0" * 64
+    _write_csv(
+        bundle["native_manifest"], NATIVE_MANIFEST_FIELDS, bundle["native_manifest_rows"]
+    )
+    report = _validate(bundle)
+    assert report["status"] == "BLOCKED"
+    assert any("M5j native_image_sha256 不一致" in error for error in report["errors"])
