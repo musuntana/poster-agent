@@ -156,6 +156,28 @@ def import_sample(output_dir: Path, limit: int = 20) -> dict:
             "attribution": str(output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"),
             "synthetic_prices": True, "image_hashes_recorded": len(rows)}
 
+def _existing_sample(output_dir: Path) -> dict | None:
+    """Reuse a previously downloaded cohort for the documented second --apply step."""
+    output_dir = output_dir.expanduser().resolve()
+    manifest = output_dir / "real_skus.csv"
+    attribution = output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"
+    if not manifest.is_file() or not attribution.is_file():
+        return None
+    with manifest.open(encoding="utf-8-sig", newline="") as stream:
+        count = sum(1 for _ in csv.DictReader(stream))
+    if not 1 <= count <= 100:
+        raise ValueError("Existing cohort manifest must contain 1..100 SKU rows")
+    return {
+        "dataset": "Amazon Berkeley Objects",
+        "license": "CC BY 4.0",
+        "count": count,
+        "manifest": str(manifest),
+        "attribution": str(attribution),
+        "synthetic_prices": True,
+        "reused_existing_sample": True,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Import a small public ABO cohort for local poster-agent smoke testing")
     parser.add_argument("--limit", type=int, default=20)
@@ -163,7 +185,9 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Generate posters via M5g and audit M5j readiness")
     args = parser.parse_args()
     try:
-        imported = import_sample(args.output_dir, args.limit)
+        imported = _existing_sample(args.output_dir) if args.apply else None
+        if imported is None:
+            imported = import_sample(args.output_dir, args.limit)
         print(json.dumps(imported, ensure_ascii=False, indent=2))
         from scripts.real_sku_batch import preflight, run_batch
         manifest = Path(imported["manifest"])
