@@ -26,6 +26,21 @@ def _fixture_repo(folder: Path, *, license_present=False) -> list[str]:
     return names
 
 
+def test_essential_community_templates_use_canonical_paths():
+    expected = {
+        ".github/pull_request_template.md",
+        ".github/ISSUE_TEMPLATE/bug_report.yml",
+        ".github/ISSUE_TEMPLATE/feature_request.yml",
+    }
+    legacy = {
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/ISSUE_TEMPLATE/feature_request.md",
+    }
+    assert expected.issubset(set(ESSENTIAL))
+    assert not (set(ESSENTIAL) & legacy)
+
+
 def test_no_license_is_explicit_public_release_blocker(tmp_path):
     names = _fixture_repo(tmp_path)
     report = inspect_repository(tmp_path, names)
