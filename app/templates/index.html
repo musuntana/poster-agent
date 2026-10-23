@@ -319,6 +319,34 @@ async function restoreExecutionPoster(posterId){
     $('executionStatus').textContent='恢复海报失败：'+err.message;
   }
 }
+async function reconcileExecution(key){
+  $('executionStatus').textContent='正在核验本地海报文件（不会再次调用生图模型）…';
+  try{
+    const res=await fetch('/api/executions/'+encodeURIComponent(key)+'/reconcile',{
+      method:'POST'
+    });
+    const obj=await res.json();
+    if(!res.ok)throw Error(errorText(obj));
+    // If the repaired execution is the current request, update its persisted
+    // status so a deliberate next generation gets a new idempotency key.
+    let saved=null;
+    try{saved=JSON.parse(localStorage.getItem('poster-last-execution')||'null')}catch(e){}
+    if(saved?.key===key){
+      localStorage.setItem('poster-last-execution',
+        JSON.stringify({...saved,status:obj.status}));
+    }
+    if(obj.status==='COMPLETED' && obj.result?.poster_id){
+      display(obj.result);
+      $('executionStatus').textContent='已从完整本地产物恢复执行 '+key;
+    }else{
+      $('executionStatus').textContent='未找到完整匹配的本地产物；状态仍为 '+
+        obj.status+'，不会自动重复付费生图';
+    }
+    await refreshExecutionHistory();
+  }catch(err){
+    $('executionStatus').textContent='本地产物核验失败：'+err.message;
+  }
+}
 async function refreshExecutionHistory(){
   const host=$('executionHistory');
   host.textContent='正在读取最近执行记录…';
@@ -349,6 +377,14 @@ async function refreshExecutionHistory(){
       check.textContent='查状态';
       check.addEventListener('click',()=>refreshExecutionStatus(item.idempotency_key));
       actions.appendChild(check);
+      if(item.status==='UNKNOWN'){
+        const reconcile=document.createElement('button');
+        reconcile.type='button';
+        reconcile.className='secondary';
+        reconcile.textContent='核对本地产物';
+        reconcile.addEventListener('click',()=>reconcileExecution(item.idempotency_key));
+        actions.appendChild(reconcile);
+      }
       if(item.poster_id){
         const restore=document.createElement('button');
         restore.type='button';

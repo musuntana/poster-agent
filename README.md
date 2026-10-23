@@ -32,7 +32,7 @@ uv run --locked python -m app.run_local --reload --port 8000
 | --- | --- | --- |
 | M1 渲染与修订 | SKU/Logo 上传、1024×1024 预览、改价产生新版本、PNG 导出；本地背景或 Qwen-Image API | 10 MiB/1600 万像素限制、ICC→sRGB；原子文件替换与分阶段发布；仅本地 Demo |
 | M2 Brief 与人工审核 | 规则/Qwen 结构化需求、LangGraph SQLite Checkpoint、规格人工确认 | 本地单进程工作流，没有登录和生产并发隔离 |
-| M2 执行可靠性 | AI 生图强制幂等键、最近执行历史/海报恢复、默认每小时 20 次与 1 路并发上限 | 单机 Demo 护栏；不等于跨系统 Exactly-Once 或用户级配额；UNKNOWN 不自动重试 |
+| M2 执行可靠性 | AI 生图强制幂等键、执行历史、完整本地产物凭据核验与恢复、默认每小时 20 次和 1 路并发上限 | 单机 Demo 护栏；不能恢复缺失或损坏的产物；不保证跨系统 Exactly-Once |
 | M3 Acceptance Gate | 文案/OCR、品牌词表、价格区域位置与冲突检查、报告 SHA-256、可视化诊断 PNG | OCR 缺失与不确定必须标 `UNVERIFIED`，不可冒充 PASS |
 | M3 评测 | 合成 OCR 样本、20 张程序渲染 PNG、FP/FN/F1、逐版人工标注及 CSV | 合成数据不是真实业务精度；人工标签尚无独立审计 |
 | M4a/M4b 多尺寸派生 | 三种安全缩放尺寸；新增 4:5 原生 SKU/标题/价格/CTA 排版 | 原生布局目前仅 4:5；其它仍安全缩放，所有派生图需人工验收 |

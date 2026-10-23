@@ -7,6 +7,7 @@ This is not a multi-process or production object-store implementation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -80,8 +81,7 @@ def _cleanup_stale_staging_dirs(storage_root: Path) -> None:
     for candidate in storage_root.iterdir():
         if not _STAGING_NAME.fullmatch(candidate.name):
             continue
-        # A stale staging symlink is not a directory owned by this store.
-        # Unlink it instead of asking rmtree to traverse/refuse it.
+        # Do not traverse a stale symlink; remove the link only.
         if candidate.is_symlink():
             candidate.unlink(missing_ok=True)
         elif candidate.is_dir():
@@ -101,7 +101,12 @@ def create(
     logo: Image.Image | None,
     background: Image.Image,
     render_bytes: bytes,
+    *,
+    idempotency_key: str | None = None,
+    request_hash: str | None = None,
 ) -> dict:
+    if (idempotency_key is None) != (request_hash is None):
+        raise ValueError("execution receipt requires both key and request hash")
     with LOCK:
         storage_root = root()
         storage_root.mkdir(parents=True, exist_ok=True)
@@ -119,14 +124,31 @@ def create(
                 save_png(logo, assets / "logo.png")
             save_png(background, assets / "background.png")
             _save_version(staging_path, 1, spec, render_bytes)
-            _atomic_json(
-                staging_path / "meta.json",
-                {
-                    "poster_id": poster_id,
-                    "latest_version": 1,
-                    "background_mode": spec.background_mode,
-                },
-            )
+            meta = {
+                "poster_id": poster_id,
+                "latest_version": 1,
+                "background_mode": spec.background_mode,
+            }
+            if idempotency_key is not None:
+                # The receipt belongs to the same last metadata write that
+                # precedes staging-directory publication.
+                files = {
+                    "product": assets / "product.png",
+                    "background": assets / "background.png",
+                    "render": staging_path / "versions" / "v1.png",
+                    "spec": staging_path / "versions" / "v1.json",
+                }
+                if logo is not None:
+                    files["logo"] = assets / "logo.png"
+                meta["execution_receipt"] = {
+                    "key": idempotency_key,
+                    "request_hash": request_hash,
+                    "sha256": {
+                        name: hashlib.sha256(file.read_bytes()).hexdigest()
+                        for name, file in files.items()
+                    },
+                }
+            _atomic_json(staging_path / "meta.json", meta)
             # Publish only after assets, version PNG/spec and metadata are complete.
             # Staging and final directories share the same parent/filesystem.
             os.replace(staging_path, final_path)
@@ -188,3 +210,82 @@ def version_path(poster_id: str, version: int) -> Path:
     if not target.is_file():
         raise FileNotFoundError("版本不存在")
     return target
+
+
+def find_completed_execution(key: str, request_hash: str) -> dict | None:
+    """Rebuild a create result only from one intact, request-matching receipt.
+
+    No provider calls. Legacy posters and incomplete, corrupt or ambiguous
+    results remain UNKNOWN, rather than falsely marked completed.
+    """
+    base = root()
+    if not base.is_dir():
+        return None
+    matches: list[dict] = []
+    for path in base.iterdir():
+        if path.is_symlink() or not path.is_dir():
+            continue
+        poster_id = path.name
+        if len(poster_id) != 32 or any(c not in "0123456789abcdef" for c in poster_id):
+            continue
+        try:
+            meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            continue  # An unrelated stale/legacy directory is not evidence.
+        if not isinstance(meta, dict):
+            continue
+        receipt = meta.get("execution_receipt")
+        if not isinstance(receipt, dict) or receipt.get("key") != key:
+            continue
+        try:
+            if (
+                receipt.get("request_hash") != request_hash
+                or meta.get("poster_id") != poster_id
+                or meta.get("latest_version") != 1
+            ):
+                return None
+            expected = receipt.get("sha256")
+            if not isinstance(expected, dict):
+                return None
+            files = {
+                "product": path / "assets" / "product.png",
+                "background": path / "assets" / "background.png",
+                "render": path / "versions" / "v1.png",
+                "spec": path / "versions" / "v1.json",
+            }
+            if "logo" in expected:
+                files["logo"] = path / "assets" / "logo.png"
+            elif (path / "assets" / "logo.png").exists():
+                return None
+            if set(expected) != set(files):
+                return None
+            for name, file in files.items():
+                digest = expected[name]
+                if (
+                    not isinstance(digest, str)
+                    or len(digest) != 64
+                    or file.is_symlink()
+                    or hashlib.sha256(file.read_bytes()).hexdigest() != digest
+                ):
+                    return None
+            spec = PosterSpec.model_validate(
+                json.loads(files["spec"].read_text(encoding="utf-8"))
+            )
+            if spec.background_mode != meta.get("background_mode"):
+                return None
+            # Rebuild the result from the verified directory only. Calling
+            # view() would re-read metadata and spec after verification, leaving
+            # a time-of-check/time-of-use gap for concurrent file changes.
+            matches.append({
+                "poster_id": poster_id,
+                "version": 1,
+                "spec": spec.model_dump(mode="json"),
+                "image_url": f"/api/posters/{poster_id}/versions/1/image",
+                "versions": [1],
+                "background_mode": meta["background_mode"],
+            })
+            if len(matches) > 1:
+                return None
+        except (OSError, ValueError, TypeError, KeyError):
+            return None
+    return matches[0] if len(matches) == 1 else None

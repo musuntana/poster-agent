@@ -164,6 +164,17 @@ def get_execution(key: str):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.post("/api/executions/{key}/reconcile")
+def reconcile_execution(key: str):
+    """Inspect a completed on-disk output without dispatching a provider call."""
+    try:
+        return execution_store.reconcile_unknown(key)
+    except execution_store.InvalidExecutionKey as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/api/posters", status_code=201)
 async def create_poster(
     product: Annotated[UploadFile, File(description="SKU 商品图片")],
@@ -220,13 +231,15 @@ async def create_poster(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Record the same normalized hash in SQLite and the completed disk receipt.
+    request_hash = _fingerprint(spec, sku, brand_logo) if idempotency_key is not None else None
     # Claim BEFORE calling a paid model. Local-background requests retain the
     # legacy optional-key behavior; AI requests above cannot proceed without a key.
     if idempotency_key is not None:
         try:
             previous = execution_store.begin(
                 idempotency_key,
-                _fingerprint(spec, sku, brand_logo),
+                request_hash,
                 paid=spec.background_mode == "ai",
             )
             if previous is not None:
@@ -248,7 +261,10 @@ async def create_poster(
         else:
             background = local_background(spec.style)
         rendered = compose(spec, sku, brand_logo, background)
-        result = storage.create(spec, sku, brand_logo, background, rendered)
+        result = storage.create(
+            spec, sku, brand_logo, background, rendered,
+            idempotency_key=idempotency_key, request_hash=request_hash,
+        )
         if idempotency_key is not None:
             execution_store.finish(idempotency_key, result)
         return result

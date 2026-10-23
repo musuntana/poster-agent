@@ -273,22 +273,64 @@ def get(key: str) -> dict:
         }
 
 
-def recover_incomplete() -> int:
-    """Single-worker startup reconciliation: orphaned RUNNING → UNKNOWN.
+def _complete_from_artifact(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    """Promote only an intact, request-matching local artifact into the ledger."""
+    from . import storage
 
-    No automatic retry: server may have called a paid model before crashing.
-    Must only be used at startup of a SINGLE worker, never alongside active workers.
+    key = row["idempotency_key"]
+    result = storage.find_completed_execution(key, row["request_hash"])
+    if result is None:
+        return False
+    cursor = conn.execute(
+        "UPDATE poster_executions SET status='COMPLETED',result_json=?,updated_at=? "
+        "WHERE idempotency_key=? AND status IN ('RUNNING','UNKNOWN')",
+        (json.dumps(result, ensure_ascii=False), _time(), key),
+    )
+    if cursor.rowcount != 1:
+        return False
+    _event(conn, key, "RECOVERED_FROM_ARTIFACT")
+    return True
+
+
+def reconcile_unknown(key: str) -> dict:
+    """Explicitly inspect a previously UNKNOWN run without calling a model.
+
+    Do not touch RUNNING tasks through this route: one could still be active.
+    """
+    _validate(key)
+    with _connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT idempotency_key,request_hash,status FROM poster_executions "
+            "WHERE idempotency_key=?", (key,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("执行记录不存在")
+        if row["status"] == "UNKNOWN":
+            _complete_from_artifact(conn, row)
+    return get(key)
+
+
+def recover_incomplete() -> int:
+    """Single-worker startup recovery, with no paid-provider retries.
+
+    Completed local artifacts with a matching receipt can be recovered;
+    other abandoned RUNNING tasks stay conservatively UNKNOWN. This must
+    never run alongside an active worker.
     """
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(
-            "SELECT idempotency_key FROM poster_executions WHERE status='RUNNING'"
+            "SELECT idempotency_key,request_hash FROM poster_executions "
+            "WHERE status='RUNNING'"
         ).fetchall()
         for row in rows:
+            if _complete_from_artifact(conn, row):
+                continue
             key = row["idempotency_key"]
             conn.execute(
                 "UPDATE poster_executions SET status='UNKNOWN',updated_at=? "
-                "WHERE idempotency_key=? AND status='RUNNING'", (_time(), key)
+                "WHERE idempotency_key=? AND status='RUNNING'", (_time(), key),
             )
             _event(conn, key, "RECOVERED_AS_UNKNOWN")
         return len(rows)
