@@ -11,7 +11,7 @@ import csv
 import hashlib
 import json
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -132,7 +132,7 @@ def validate_bundle(
 ) -> dict:
     """Validate the full M6 local evidence bundle without mutating its inputs."""
     manifest_path = Path(manifest)
-    registry_path, registry_rows, registry_sha = _read_csv(
+    _registry_path, registry_rows, registry_sha = _read_csv(
         Path(registry), REGISTRY_FIELDS, "M6 cohort registry"
     )
     reviews_path, review_rows, reviews_sha = _read_csv(
@@ -140,7 +140,7 @@ def validate_bundle(
     )
     journal_path = Path(journal).resolve(strict=True)
     journal_path, journal_data, journal_sha = _read_json(journal_path, "M5g batch journal")
-    readiness_path, readiness_data, readiness_sha = _read_json(
+    _readiness_path, readiness_data, readiness_sha = _read_json(
         Path(readiness), "M5j readiness"
     )
 
@@ -152,6 +152,8 @@ def validate_bundle(
     expected_skus = set(prepared_by_sku)
     errors: list[str] = []
     warnings: list[str] = []
+    present_output_count = 0
+    missing_output_count = 0
 
     try:
         scope = load_batch_scope(journal_path)
@@ -334,6 +336,7 @@ def validate_bundle(
 
         path_value, hash_value = row["output_image_path"], row["output_image_sha256"]
         if not path_value and not hash_value:
+            missing_output_count += 1
             if row["overall_accept"] != "UNVERIFIED":
                 errors.append(f"{sku}/{variant}: 缺失输出必须标记 overall_accept=UNVERIFIED")
             if not any(code in row["overall_reason"] for code in ("OUTPUT_MISSING", "EXPORT_FAILED")):
@@ -341,6 +344,7 @@ def validate_bundle(
             errors.append(f"{sku}/{variant}: 预期输出缺失，保留在分母并阻塞 M6 验收")
             continue
         if not path_value or not hash_value:
+            missing_output_count += 1
             errors.append(f"{sku}/{variant}: output_image_path 与 output_image_sha256 必须同时填写")
             continue
         if not _is_sha(hash_value):
@@ -353,7 +357,9 @@ def validate_bundle(
                 image.load()
                 actual_size = image.size
                 image_format = image.format
+            present_output_count += 1
         except (OSError, ValueError, M6ValidationError) as exc:
+            missing_output_count += 1
             errors.append(f"{sku}/{variant}: 输出 PNG 不可读取：{exc}")
             continue
         if actual_sha != hash_value:
@@ -395,12 +401,8 @@ def validate_bundle(
         "registry_row_count": len(registry_rows),
         "expected_output_count": 2 * len(expected_skus),
         "review_row_count": len(review_rows),
-        "present_output_count": sum(
-            1 for row in review_rows if row["output_image_path"] and row["output_image_sha256"]
-        ),
-        "missing_output_count": sum(
-            1 for row in review_rows if not row["output_image_path"] and not row["output_image_sha256"]
-        ),
+        "present_output_count": present_output_count,
+        "missing_output_count": missing_output_count,
         "distinct_source_image_sha256_count": len(set(source_hashes)),
         "product_category_count": len({row["product_category"] for row in registry_rows if row["product_category"]}),
         "product_family_count": len({row["product_family_id"] for row in registry_rows if row["product_family_id"]}),
@@ -423,6 +425,16 @@ def validate_bundle(
     return report
 
 
+def _safe_report_destination(output: Path, inputs: tuple[Path, ...]) -> Path:
+    destination = output.expanduser().resolve()
+    for source in inputs:
+        if destination == Path(source).expanduser().resolve():
+            raise M6ValidationError("报告输出路径不能覆盖 manifest、registry、journal、reviews 或 readiness 输入")
+    if destination.exists():
+        raise M6ValidationError("报告输出文件已存在；请使用新路径以保留此前的证据记录")
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate the local M6 real-SKU evidence bundle; no OCR/model calls"
@@ -434,6 +446,13 @@ def main() -> int:
     parser.add_argument("--readiness", type=Path, required=True, help="M5j native_trial_readiness.json")
     parser.add_argument("--output", type=Path, required=True, help="Local JSON report destination")
     args = parser.parse_args()
+    try:
+        destination = _safe_report_destination(
+            args.output,
+            (args.manifest, args.registry, args.journal, args.reviews, args.readiness),
+        )
+    except M6ValidationError as exc:
+        parser.error(str(exc))
     try:
         report = validate_bundle(
             args.manifest, args.registry, args.journal, args.reviews, args.readiness
@@ -449,7 +468,6 @@ def main() -> int:
             "errors": [str(exc)],
             "warnings": [],
         }
-    destination = args.output.expanduser().resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     raw = (json.dumps(report, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     destination.write_bytes(raw)
