@@ -9,7 +9,7 @@
 | 平台与配置入口 | [根 README](../README.md) | 当前运行、限制、模块、下一步 |
 | uv 开发环境与锁依赖 | [uv-workflow.md](uv-workflow.md) | Python 3.12 / pyproject.toml / uv.lock、开发组、按需 OCR |
 | 付费生图幂等与恢复 | [paid-call-idempotency.md](paid-call-idempotency.md) | AI 模式强制幂等键、重复请求冲突、UNKNOWN 结果处理与单进程边界 |
-| 公开仓库与开源发布准备（M5k） | [open-source-release.md](open-source-release.md) | Apache-2.0 已选定、LICENSE PR 待合并；源码/素材授权与历史审查仍待完成 |
+| 公开仓库与开源发布准备（M5k） | [open-source-release.md](open-source-release.md) | Apache-2.0 已选定；源码/素材授权与历史审查仍待完成 |
 | GitHub Actions 节省额度 | [ci-budget.md](ci-budget.md) | PR Ready 一次 quick；full 与真实 OCR 手动触发 |
 | 人工标注和标签导出 | [m3c-human-review.md](m3c-human-review.md) | PNG 逐版审核、人工标注、导出 CSV |
 | Mac / Linux 单图 OCR 诊断 | [m3d-ocr-runtime.md](m3d-ocr-runtime.md) | 本地 OCR 环境、诊断与结果证据 |
