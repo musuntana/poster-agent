@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible defect in Poster Agent
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include API keys, customer images, private batch journals, or personal data.
+        This project is a local demo; simulated and real-model results must be distinguished.
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Include the commit SHA when possible.
+      placeholder: "main @ <commit-sha>"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux x86_64
+        - Windows / WSL
+        - GitHub Actions
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic or explicitly authorized sample data only.
+      placeholder: "1. Run ...\n2. Open ...\n3. Observe ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs and evidence
+      description: Include exact commands and test results. Remove secrets and private paths.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed secrets, customer data, and unauthorized assets from this report.
+          required: true
+        - label: I distinguished mock/synthetic evidence from real-model or human-review evidence.
+          required: true
