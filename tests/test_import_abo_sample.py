@@ -1,8 +1,54 @@
 import csv
+import hashlib
 
 import pytest
 
 from scripts.import_abo_sample import _existing_sample, _synthetic_prices, _title, _category
+
+
+
+def _write_valid_existing_sample(output_dir, count=2):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    image_dir = output_dir / "images"
+    image_dir.mkdir(exist_ok=True)
+    rows = []
+    attribution_rows = []
+    for index in range(1, count + 1):
+        item_id = f"item-{index}"
+        sku = f"ABO-{item_id}"
+        image_name = f"{sku}.jpg"
+        image_bytes = f"fixture-image-{index}".encode()
+        (image_dir / image_name).write_bytes(image_bytes)
+        image_sha = hashlib.sha256(image_bytes).hexdigest()
+        rows.append({
+            "sku_id": sku,
+            "product_image": f"images/{image_name}",
+            "title": f"Product {index}",
+            "price": "19.90",
+        })
+        attribution_rows.append(
+            f"| {item_id} | Product {index} | Home | image-{index} | {image_sha} |"
+        )
+
+    manifest = output_dir / "real_skus.csv"
+    with manifest.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=["sku_id", "product_image", "title", "price"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    attribution = output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"
+    attribution.write_text(
+        "# Dataset attribution and limitations\n\n"
+        f"Manifest SHA-256: `{manifest_sha}`\n\n"
+        "| Item ID | Title | Category | Main image ID | Local image SHA-256 |\n"
+        "|---|---|---|---|---|\n"
+        + "\n".join(attribution_rows)
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest, attribution
 
 def test_synthetic_prices_are_stable_and_original_price_is_higher():
     assert _synthetic_prices("B075X4QMX3") == _synthetic_prices("B075X4QMX3")
@@ -24,29 +70,82 @@ def test_category_fallbacks():
 
 
 def test_existing_sample_is_reused_only_with_manifest_and_attribution(tmp_path):
-    manifest = tmp_path / "real_skus.csv"
-    with manifest.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["sku_id"])
-        writer.writeheader()
-        writer.writerow({"sku_id": "ABO-1"})
-        writer.writerow({"sku_id": "ABO-2"})
+    manifest, attribution = _write_valid_existing_sample(tmp_path, count=2)
+    original_attribution = attribution.read_text(encoding="utf-8")
+    attribution.unlink()
     assert _existing_sample(tmp_path) is None
-    (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
+    attribution.write_text(original_attribution, encoding="utf-8")
+
     sample = _existing_sample(tmp_path)
     assert sample is not None
     assert sample["count"] == 2
     assert sample["reused_existing_sample"] is True
     assert sample["manifest"] == str(manifest.resolve())
+    assert sample["manifest_sha256"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    assert sample["image_hashes_recorded"] == 2
 
 
 def test_existing_sample_rejects_empty_or_oversized_manifest(tmp_path):
     manifest = tmp_path / "real_skus.csv"
-    manifest.write_text("sku_id\n", encoding="utf-8")
+    manifest.write_text("sku_id,product_image,title,price\\n", encoding="utf-8")
     (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
     with pytest.raises(ValueError, match="1..100"):
         _existing_sample(tmp_path)
 
+    with manifest.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=["sku_id", "product_image", "title", "price"]
+        )
+        writer.writeheader()
+        writer.writerows({
+            "sku_id": f"ABO-item-{index}",
+            "product_image": f"images/ABO-item-{index}.jpg",
+            "title": f"Product {index}",
+            "price": "19.90",
+        } for index in range(101))
+    with pytest.raises(ValueError, match="1..100"):
+        _existing_sample(tmp_path)
 
+
+def test_existing_sample_rejects_manifest_tampering(tmp_path):
+    manifest, _ = _write_valid_existing_sample(tmp_path, count=2)
+    content = manifest.read_text(encoding="utf-8")
+    manifest.write_text(content.replace("19.90", "1.00", 1), encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest does not match its attribution digest"):
+        _existing_sample(tmp_path)
+
+
+def test_existing_sample_rejects_source_image_tampering(tmp_path):
+    _, _ = _write_valid_existing_sample(tmp_path, count=2)
+    (tmp_path / "images" / "ABO-item-1.jpg").write_bytes(b"changed image bytes")
+    with pytest.raises(ValueError, match="source image SHA-256 differs from attribution"):
+        _existing_sample(tmp_path)
+
+
+def test_existing_sample_rejects_image_path_escape(tmp_path):
+    manifest, attribution = _write_valid_existing_sample(tmp_path, count=2)
+    rows = []
+    with manifest.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    rows[0]["product_image"] = "../../outside.jpg"
+    with manifest.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream, fieldnames=["sku_id", "product_image", "title", "price"]
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    new_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    attribution_text = attribution.read_text(encoding="utf-8")
+    old_digest = attribution_text.split("Manifest SHA-256: `", 1)[1].split("`", 1)[0]
+    attribution.write_text(
+        attribution_text.replace(
+            f"Manifest SHA-256: `{old_digest}`",
+            f"Manifest SHA-256: `{new_digest}`",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="missing or escapes"):
+        _existing_sample(tmp_path)
 
 def test_import_sample_publishes_complete_cohort_atomically(tmp_path, monkeypatch):
     from scripts import import_abo_sample as importer
@@ -117,17 +216,7 @@ def test_import_sample_refuses_nonempty_destination_without_mutating_it(tmp_path
 
 
 def test_existing_sample_rejects_explicit_limit_mismatch(tmp_path):
-    import csv
-
-    from scripts.import_abo_sample import _existing_sample
-
-    manifest = tmp_path / "real_skus.csv"
-    with manifest.open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=["sku_id"])
-        writer.writeheader()
-        writer.writerow({"sku_id": "ABO-1"})
-        writer.writerow({"sku_id": "ABO-2"})
-    (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
+    _write_valid_existing_sample(tmp_path, count=2)
 
     # Omitting --limit reuses the cohort's actual size.
     assert _existing_sample(tmp_path)["count"] == 2
