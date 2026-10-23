@@ -44,6 +44,13 @@ body:
     validations:
       required: false
   - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and examples
+      description: Include reproducible examples or links to public, authorized references; do not attach private customer data.
+    validations:
+      required: false
+  - type: textarea
     id: constraints
     attributes:
       label: Risks, costs, and non-goals
