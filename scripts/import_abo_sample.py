@@ -143,8 +143,10 @@ def _import_sample_into(output_dir: Path, limit: int = 20) -> dict:
                 "style": STYLES[index % len(STYLES)], "logo_image": ""})
             rows.append(f"| {product['item_id']} | {product['title'].replace('|', '/')} | "
                         f"{product['category'].replace('|', '/')} | {product['image_id']} | {image_sha} |")
+    manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
     (output_dir / "PUBLIC_DATASET_ATTRIBUTION.md").write_text(
         "# Dataset attribution and limitations\n\n"
+        f"Manifest SHA-256: `{manifest_sha}`\n\n"
         "Dataset: Amazon Berkeley Objects (ABO), managed by Amazon.com.\n"
         "Official page: https://amazon-berkeley-objects.s3.amazonaws.com/index.html\n"
         "License: Creative Commons Attribution 4.0: https://creativecommons.org/licenses/by/4.0/\n"
@@ -182,14 +184,20 @@ def import_sample(output_dir: Path, limit: int = 20) -> dict:
 
 
 def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dict | None:
-    """Reuse a downloaded cohort, rejecting an explicitly requested size mismatch."""
+    """Reuse a cohort only when its manifest, attribution, and source images still agree."""
     output_dir = output_dir.expanduser().resolve()
     manifest = output_dir / "real_skus.csv"
     attribution = output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"
     if not manifest.is_file() or not attribution.is_file():
         return None
+
     with manifest.open(encoding="utf-8-sig", newline="") as stream:
-        count = sum(1 for _ in csv.DictReader(stream))
+        reader = csv.DictReader(stream)
+        required = {"sku_id", "product_image", "title", "price"}
+        if not reader.fieldnames or not required.issubset(reader.fieldnames):
+            raise ValueError("Existing cohort manifest is missing required SKU columns")
+        rows = list(reader)
+    count = len(rows)
     if not 1 <= count <= 100:
         raise ValueError("Existing cohort manifest must contain 1..100 SKU rows")
     if expected_limit is not None and count != expected_limit:
@@ -197,16 +205,78 @@ def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dic
             f"Existing cohort has {count} SKUs but --limit {expected_limit} was requested; "
             "use the original limit or choose a fresh --output-dir."
         )
+
+    attribution_text = attribution.read_text(encoding="utf-8")
+    manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    digest_line = next(
+        (line for line in attribution_text.splitlines() if line.startswith("Manifest SHA-256:")),
+        "",
+    )
+    recorded_manifest = digest_line.removeprefix("Manifest SHA-256:").replaceAll(
+        String.fromCharCode(96), ""
+    ).strip()
+    if recorded_manifest != manifest_digest:
+        raise ValueError(
+            "Existing cohort manifest does not match its attribution digest; "
+            "restore the original files or choose a fresh --output-dir."
+        )
+
+    # Bind each public item ID to the exact downloaded source-image bytes.
+    # A changed image or edited manifest must not be silently reused as the same cohort.
+    attributed_hashes: dict[str, str] = {}
+    for line in attribution_text.splitlines():
+        if not line.strip().startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 5 or not re.fullmatch(r"[0-9a-f]{64}", cells[4]):
+            continue
+        item_id = cells[0]
+        sku = f"ABO-{item_id}"
+        if not item_id or sku in attributed_hashes:
+            raise ValueError("Existing cohort attribution has an empty or duplicate item ID")
+        attributed_hashes[sku] = cells[4]
+
+    if len(attributed_hashes) != count:
+        raise ValueError(
+            "Existing cohort attribution rows do not match the manifest SKU count; "
+            "choose a fresh --output-dir."
+        )
+
+    seen: set[str] = set()
+    for row in rows:
+        sku = (row.get("sku_id") or "").strip()
+        if not sku or sku in seen or sku not in attributed_hashes:
+            raise ValueError("Existing cohort has duplicate or unattributed SKU IDs")
+        seen.add(sku)
+
+        image_value = (row.get("product_image") or "").strip()
+        image_relative = Path(image_value)
+        if not image_value or image_value != image_value.strip() or image_relative.is_absolute():
+            raise ValueError(f"{sku}: source image path must be a relative local path")
+        image_path = (output_dir / image_relative).resolve()
+        if not image_path.is_relative_to(output_dir) or not image_path.is_file():
+            raise ValueError(f"{sku}: source image is missing or escapes the cohort directory")
+        image_size = image_path.stat().st_size
+        if not 0 < image_size <= MAX_BYTES:
+            raise ValueError(f"{sku}: source image is empty or exceeds the 10 MiB limit")
+        actual_sha = hashlib.sha256(image_path.read_bytes()).hexdigest()
+        if actual_sha != attributed_hashes[sku]:
+            raise ValueError(
+                f"{sku}: source image SHA-256 differs from attribution; "
+                "restore the original image or create a fresh cohort."
+            )
+
     return {
         "dataset": "Amazon Berkeley Objects",
         "license": "CC BY 4.0",
         "count": count,
         "manifest": str(manifest),
+        "manifest_sha256": manifest_digest,
         "attribution": str(attribution),
         "synthetic_prices": True,
+        "image_hashes_recorded": count,
         "reused_existing_sample": True,
     }
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Import a small public ABO cohort for local poster-agent smoke testing")
