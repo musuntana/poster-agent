@@ -66,8 +66,10 @@ def prepare_package(journal: Path, output_dir: Path, *, apply: bool = False) -> 
     if apply and output_dir.exists():
         raise PreparationError("输出目录已存在；为防止覆盖图片或人工标注，请指定全新的批次目录")
 
+    cohort_id = "m6-" + scope["source_batch_journal_sha256"][:12]
     plan = {
         "schema_version": SCHEMA,
+        "cohort_id": cohort_id,
         "mode": "apply" if apply else "check",
         "source_batch_journal_sha256": scope["source_batch_journal_sha256"],
         "source_manifest_sha256": scope["source_manifest_sha256"],
@@ -96,7 +98,7 @@ def prepare_package(journal: Path, output_dir: Path, *, apply: bool = False) -> 
         for sku, pid in items:
             record = batch[sku]
             registry_rows.append({
-                "cohort_id": "",
+                "cohort_id": cohort_id,
                 "sku_id": sku,
                 "product_category": "",
                 "product_family_id": "",
@@ -139,7 +141,7 @@ def prepare_package(journal: Path, output_dir: Path, *, apply: bool = False) -> 
                 problem = f"SOURCE_INVALID:{type(exc).__name__}"
 
             common = {
-                "cohort_id": "",
+                "cohort_id": cohort_id,
                 "sku_id": sku,
                 "poster_id": pid,
                 "source_version": version,
