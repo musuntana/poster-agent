@@ -7,7 +7,7 @@ import hashlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 import warnings
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Request, Query
@@ -149,9 +149,13 @@ def _fingerprint(spec: PosterSpec, product: Image.Image, logo: Image.Image | Non
 
 
 @app.get("/api/executions")
-def list_executions(limit: int = Query(default=10, ge=1, le=50)):
-    """List recent execution summaries without exposing request payloads or result specs."""
-    return {"items": execution_store.list_recent(limit)}
+def list_executions(
+    limit: int = Query(default=10, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10000),
+    status: Literal["RUNNING", "COMPLETED", "UNKNOWN"] | None = Query(default=None),
+):
+    """Page recent execution summaries; never expose full request or result payloads."""
+    return execution_store.list_recent_page(limit=limit, offset=offset, status=status)
 
 
 @app.get("/api/executions/{key}")

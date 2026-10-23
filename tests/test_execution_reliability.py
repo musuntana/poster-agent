@@ -533,3 +533,59 @@ def test_paid_generation_unknown_to_completed_e2e_without_second_model_call(
         item["idempotency_key"] == key and item["status"] == "COMPLETED"
         for item in history.json()["items"]
     )
+
+def test_execution_history_status_filter_and_pagination(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+
+    # Create deterministic local execution records without generating any images.
+    for i in range(7):
+        key = f"history-page-test-{i:02d}"
+        assert execution_store.begin(key, f"hash-{i}") is None
+        if i < 5:
+            execution_store.mark_unknown(key)
+        else:
+            execution_store.finish(key, {
+                "poster_id": "a" * 32, "version": 1, "background_mode": "local"
+            })
+
+    first = client.get("/api/executions?limit=2&offset=0&status=UNKNOWN")
+    second = client.get("/api/executions?limit=2&offset=2&status=UNKNOWN")
+    third = client.get("/api/executions?limit=2&offset=4&status=UNKNOWN")
+
+    assert all(response.status_code == 200 for response in (first, second, third))
+    one, two, three = (r.json() for r in (first, second, third))
+    assert [len(p["items"]) for p in (one, two, three)] == [2, 2, 1]
+    assert [p["has_more"] for p in (one, two, three)] == [True, True, False]
+    assert one["offset"] == 0 and two["offset"] == 2 and three["offset"] == 4
+    assert all(item["status"] == "UNKNOWN" for p in (one, two, three) for item in p["items"])
+    keys = [item["idempotency_key"] for p in (one, two, three) for item in p["items"]]
+    assert len(set(keys)) == 5
+
+    completed = client.get("/api/executions?limit=10&status=COMPLETED")
+    assert completed.status_code == 200
+    assert len(completed.json()["items"]) == 2
+    assert not completed.json()["has_more"]
+    assert all(item["poster_id"] == "a" * 32 for item in completed.json()["items"])
+    assert all(
+        "result" not in item and "request_hash" not in item
+        for item in completed.json()["items"]
+    )
+
+
+def test_execution_history_rejects_unbounded_or_invalid_filters(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    bad_queries = (
+        "limit=0", "limit=51", "offset=-1", "offset=10001",
+        "status=FAILED", "status=UNKNOWN%27%20OR%201%3D1",
+    )
+    assert all(
+        client.get("/api/executions?" + params).status_code == 422
+        for params in bad_queries
+    )
+    # The old API contract remains valid for existing callers.
+    response = client.get("/api/executions?limit=10")
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["offset"] == 0
+    assert response.json()["has_more"] is False
+

@@ -336,20 +336,31 @@ def recover_incomplete() -> int:
         return len(rows)
 
 
-def list_recent(limit: int = 20) -> list[dict[str, Any]]:
-    """Return a bounded, privacy-minimized summary of recent execution records."""
+def list_recent_page(
+    limit: int = 20, offset: int = 0, status: str | None = None
+) -> dict[str, Any]:
+    """Page local execution summaries without exposing request data or full results.
+
+    Offset paging is intentional for this single-user demo. New completions
+    can reorder pages; clients should refresh before navigating old records.
+    """
     if not 1 <= limit <= 50:
         raise ValueError("limit must be between 1 and 50")
+    if not 0 <= offset <= 10000:
+        raise ValueError("offset must be between 0 and 10000")
+    if status is not None and status not in {"RUNNING", "COMPLETED", "UNKNOWN"}:
+        raise ValueError("invalid execution status")
     with _connect() as conn:
         rows = conn.execute(
             "SELECT idempotency_key,status,started_at,updated_at,result_json "
-            "FROM poster_executions "
-            "ORDER BY updated_at DESC, started_at DESC, idempotency_key DESC LIMIT ?",
-            (limit,),
+            "FROM poster_executions WHERE (? IS NULL OR status = ?) "
+            "ORDER BY updated_at DESC, started_at DESC, idempotency_key DESC "
+            "LIMIT ? OFFSET ?",
+            (status, status, limit + 1, offset),
         ).fetchall()
 
     items: list[dict[str, Any]] = []
-    for row in rows:
+    for row in rows[:limit]:
         result = json.loads(row["result_json"]) if row["result_json"] else None
         items.append(
             {
@@ -362,4 +373,15 @@ def list_recent(limit: int = 20) -> list[dict[str, Any]]:
                 "background_mode": result.get("background_mode") if result else None,
             }
         )
-    return items
+    return {
+        "items": items,
+        "limit": limit,
+        "offset": offset,
+        "status": status,
+        "has_more": len(rows) > limit,
+    }
+
+
+def list_recent(limit: int = 20) -> list[dict[str, Any]]:
+    """Backward-compatible recent-list helper used by local integrations."""
+    return list_recent_page(limit=limit)["items"]

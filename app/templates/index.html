@@ -60,6 +60,18 @@
 <div class="actions"><button id="generate" type="submit">生成海报</button><span id="createStatus" class="tip">上传商品图后生成</span></div>
 <div class="actions" style="margin-top:12px"><button id="checkExecution" type="button" class="secondary">查询最近执行状态</button><button id="refreshExecutionHistory" type="button" class="secondary">刷新执行历史</button></div>
 <p id="executionStatus" class="tip">生成请求会保存本地幂等键。网络断开时先查状态，不重复付费生图。</p>
+<div class="actions" style="margin-top:12px">
+  <label for="executionHistoryFilter">历史记录筛选</label>
+  <select id="executionHistoryFilter" aria-label="按执行状态筛选">
+    <option value="">全部状态</option>
+    <option value="COMPLETED">已完成</option>
+    <option value="UNKNOWN">结果未知</option>
+    <option value="RUNNING">执行中</option>
+  </select>
+  <button id="executionHistoryPrev" type="button" class="secondary" disabled>上一页</button>
+  <button id="executionHistoryNext" type="button" class="secondary" disabled>下一页</button>
+  <span id="executionHistoryRange" class="tip" aria-live="polite">读取中…</span>
+</div>
 <div id="executionHistory" class="execution-history" aria-live="polite">读取最近执行记录…</div>
 </form>
 <p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
@@ -347,19 +359,31 @@ async function reconcileExecution(key){
     $('executionStatus').textContent='本地产物核验失败：'+err.message;
   }
 }
+const executionHistoryPaging={offset:0,limit:10};
+let executionHistoryRequest=0;
 async function refreshExecutionHistory(){
   const host=$('executionHistory');
-  host.textContent='正在读取最近执行记录…';
+  const request=++executionHistoryRequest;
+  const offset=executionHistoryPaging.offset;
+  const limit=executionHistoryPaging.limit;
+  const status=$('executionHistoryFilter').value;
+  host.textContent='正在读取执行历史…';
+  $('executionHistoryPrev').disabled=true;
+  $('executionHistoryNext').disabled=true;
+  $('executionHistoryRange').textContent='读取中…';
   try{
-    const res=await fetch('/api/executions?limit=10');
+    const query=new URLSearchParams({limit:String(limit),offset:String(offset)});
+    if(status)query.set('status',status);
+    const res=await fetch('/api/executions?'+query.toString());
     const obj=await res.json();
+    if(request!==executionHistoryRequest)return; // a newer filter/page request won
     if(!res.ok)throw Error(errorText(obj));
     host.replaceChildren();
-    if(!obj.items.length){
-      host.textContent='尚无执行记录';
-      return;
+    const items=obj.items||[];
+    if(!items.length){
+      host.textContent=offset?'当前页没有记录，请返回上一页':'没有符合条件的执行记录';
     }
-    for(const item of obj.items){
+    for(const item of items){
       const row=document.createElement('div');
       row.className='execution-row';
       const summary=document.createElement('span');
@@ -396,12 +420,32 @@ async function refreshExecutionHistory(){
       row.appendChild(actions);
       host.appendChild(row);
     }
+    $('executionHistoryPrev').disabled=offset===0;
+    $('executionHistoryNext').disabled=!obj.has_more || offset+limit>10000;
+    $('executionHistoryRange').textContent=items.length
+      ? '第 '+(offset+1)+'–'+(offset+items.length)+' 条'+(obj.has_more?'，还有更多':'')
+      : '当前页无记录';
   }catch(err){
+    if(request!==executionHistoryRequest)return;
     host.textContent='读取执行历史失败：'+err.message;
+    $('executionHistoryPrev').disabled=offset===0;
+    $('executionHistoryRange').textContent='读取失败';
   }
 }
 $('checkExecution').addEventListener('click',()=>{refreshExecutionStatus();refreshExecutionHistory();});
 $('refreshExecutionHistory').addEventListener('click',refreshExecutionHistory);
+$('executionHistoryFilter').addEventListener('change',()=>{
+  executionHistoryPaging.offset=0;
+  refreshExecutionHistory();
+});
+$('executionHistoryPrev').addEventListener('click',()=>{
+  executionHistoryPaging.offset=Math.max(0,executionHistoryPaging.offset-executionHistoryPaging.limit);
+  refreshExecutionHistory();
+});
+$('executionHistoryNext').addEventListener('click',()=>{
+  executionHistoryPaging.offset=Math.min(10000,executionHistoryPaging.offset+executionHistoryPaging.limit);
+  refreshExecutionHistory();
+});
 refreshExecutionStatus();
 refreshExecutionHistory();
 async function fingerprintFormData(body){
