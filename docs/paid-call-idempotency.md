@@ -2,7 +2,7 @@
 
 ## Policy
 
-The `ai` background mode can incur third-party model charges. Every request to `POST /api/posters` with `background_mode=ai` must include an `Idempotency-Key` header. The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. A missing key is rejected with HTTP 428 before the image provider is called. Invalid keys are rejected with HTTP 422.
+The `ai` background mode can incur third-party model charges. Every request to `POST /api/posters` with `background_mode=ai` must include an `Idempotency-Key` header. The key must contain 8–128 ASCII letters, digits, underscores, or hyphens. A missing or empty key is rejected with HTTP 428 before reading/decoding uploaded images, claiming the ledger, or calling the image provider. Invalid keys are rejected with HTTP 422.
 
 Local-background requests may omit the header for legacy API compatibility, although the browser UI sends a key for every create request.
 
@@ -21,6 +21,20 @@ Do not automatically generate a replacement key after a timeout. A new key repre
 The SQLite ledger atomically claims a key before provider dispatch and protects against duplicate calls that reach this single app instance with the same key. It is not cross-provider exactly-once execution: a process can fail after a provider accepted a request but before the result is persisted. Such cases must remain `UNKNOWN` rather than being retried automatically.
 
 The ledger and locking model are local, single-worker only. This policy is not user authentication, resource authorization, multi-tenant isolation, a distributed lock, or a production job queue. Shared, reverse-proxy, multi-worker, and public deployments remain unsupported.
+
+## Execution history and browser retry lifecycle
+
+The UI fingerprints uploaded file bytes with SHA-256 (the digest is stored locally, not the file), so files with the same name/size/timestamp but different contents are not treated as the same request. While a request is RUNNING or UNKNOWN, the UI reuses its key after retries. After a request is confirmed COMPLETED, an intentional new submit gets a fresh key even when the form and files are identical.
+
+- `GET /api/executions?limit=10` returns a bounded list of recent execution summaries, including UNKNOWN records, timestamps, and minimal completed-poster identifiers. The limit must be between 1 and 50; the endpoint does not return full request/result specifications.
+- The UI can query a listed key or restore a completed poster from the history list.
+- The hourly guardrail backfills completed legacy AI runs from stored result metadata on first use. Older UNKNOWN rows without background-mode metadata cannot be classified reliably.
+
+## Local Demo paid-call limits
+
+The shared SQLite ledger limits paid AI generation to **one in-flight request** and **20 claimed attempts in a rolling hour** by default. Configure `POSTER_MAX_CONCURRENT_AI_GENERATIONS` (1–100) and `POSTER_MAX_AI_GENERATIONS_PER_HOUR` (1–10000) in `.env`. A rejected request receives HTTP 429 before a new execution record is created or the provider is called.
+
+The hourly budget counts claims conservatively, including attempts that later become UNKNOWN; it is not a provider billing report. These are global single-instance guardrails, not per-user quotas, and they do not make the unsupported multi-worker startup/recovery model safe.
 
 ## Client example
 
