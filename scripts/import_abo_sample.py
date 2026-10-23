@@ -10,6 +10,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 from PIL import Image, UnidentifiedImageError
@@ -145,7 +146,8 @@ def import_sample(output_dir: Path, limit: int = 20) -> dict:
         "Dataset: Amazon Berkeley Objects (ABO), managed by Amazon.com.\n"
         "Official page: https://amazon-berkeley-objects.s3.amazonaws.com/index.html\n"
         "License: Creative Commons Attribution 4.0: https://creativecommons.org/licenses/by/4.0/\n"
-        "Attribution: Amazon.com and dataset authors listed on the official dataset page.\n\n"
+        "Attribution: Amazon.com and dataset authors listed on the official dataset page.\n"
+        f"Retrieved at (UTC): {datetime.now(timezone.utc).isoformat()}\n\n"
         "Changes: selected catalog records, downloaded original images, truncated titles to 35 characters, "
         "and generated deterministic synthetic prices because the dataset is not a current-price feed. "
         "Prices are NOT actual Amazon or Chinese marketplace prices. Keep this cohort local; do not commit it.\n\n"
