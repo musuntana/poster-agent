@@ -45,3 +45,71 @@ def test_existing_sample_rejects_empty_or_oversized_manifest(tmp_path):
     (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
     with pytest.raises(ValueError, match="1..100"):
         _existing_sample(tmp_path)
+
+
+
+def test_import_sample_publishes_complete_cohort_atomically(tmp_path, monkeypatch):
+    from scripts import import_abo_sample as importer
+
+    monkeypatch.setattr(importer, "_select", lambda limit: [{
+        "item_id": "item-1",
+        "image_id": "image-1",
+        "title": "Example product",
+        "category": "Home",
+    }])
+    monkeypatch.setattr(importer, "_paths", lambda ids: {"image-1": "example.jpg"})
+
+    def fake_download(path, destination):
+        destination.write_bytes(b"fixture-image")
+        return "a" * 64
+
+    monkeypatch.setattr(importer, "_download", fake_download)
+    output = tmp_path / "cohort"
+    result = importer.import_sample(output, limit=1)
+
+    assert output.is_dir()
+    assert (output / "images" / "ABO-item-1.jpg").read_bytes() == b"fixture-image"
+    assert (output / "real_skus.csv").is_file()
+    assert (output / "PUBLIC_DATASET_ATTRIBUTION.md").is_file()
+    assert result["manifest"] == str(output / "real_skus.csv")
+    assert result["attribution"] == str(output / "PUBLIC_DATASET_ATTRIBUTION.md")
+    assert not list(tmp_path.glob(".abo-sample-*"))
+
+
+def test_import_sample_failure_leaves_no_partial_cohort(tmp_path, monkeypatch):
+    from scripts import import_abo_sample as importer
+
+    monkeypatch.setattr(importer, "_select", lambda limit: [{
+        "item_id": "item-1",
+        "image_id": "image-1",
+        "title": "Example product",
+        "category": "Home",
+    }])
+    monkeypatch.setattr(importer, "_paths", lambda ids: {"image-1": "example.jpg"})
+
+    def fail_download(path, destination):
+        destination.write_bytes(b"partial")
+        raise RuntimeError("simulated network failure")
+
+    monkeypatch.setattr(importer, "_download", fail_download)
+    output = tmp_path / "cohort"
+
+    with pytest.raises(RuntimeError, match="simulated network failure"):
+        importer.import_sample(output, limit=1)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(".abo-sample-*"))
+
+
+def test_import_sample_refuses_nonempty_destination_without_mutating_it(tmp_path):
+    from scripts.import_abo_sample import import_sample
+
+    output = tmp_path / "cohort"
+    output.mkdir()
+    sentinel = output / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Refusing to overwrite"):
+        import_sample(output, limit=1)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"

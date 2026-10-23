@@ -6,8 +6,10 @@ import gzip
 import hashlib
 import io
 import json
+import os
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -108,7 +110,7 @@ def _download(path: str, destination: Path) -> str:
     destination.write_bytes(raw)
     return hashlib.sha256(raw).hexdigest()
 
-def import_sample(output_dir: Path, limit: int = 20) -> dict:
+def _import_sample_into(output_dir: Path, limit: int = 20) -> dict:
     if not 1 <= limit <= 100:
         raise ValueError("limit must be in 1..100")
     output_dir = output_dir.expanduser().resolve()
@@ -157,6 +159,27 @@ def import_sample(output_dir: Path, limit: int = 20) -> dict:
             "category_count": len({x["category"] for x in products}), "manifest": str(manifest),
             "attribution": str(output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"),
             "synthetic_prices": True, "image_hashes_recorded": len(rows)}
+
+def import_sample(output_dir: Path, limit: int = 20) -> dict:
+    """Download a cohort atomically so failed network runs leave no partial output."""
+    if not 1 <= limit <= 100:
+        raise ValueError("limit must be in 1..100")
+    output_dir = output_dir.expanduser().resolve()
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise ValueError(f"Refusing to overwrite non-empty directory: {output_dir}")
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix=".abo-sample-", dir=output_dir.parent) as temp:
+        staging_dir = Path(temp) / "cohort"
+        result = _import_sample_into(staging_dir, limit)
+        if output_dir.exists():
+            output_dir.rmdir()
+        os.replace(staging_dir, output_dir)
+
+    result["manifest"] = str(output_dir / "real_skus.csv")
+    result["attribution"] = str(output_dir / "PUBLIC_DATASET_ATTRIBUTION.md")
+    return result
+
 
 def _existing_sample(output_dir: Path) -> dict | None:
     """Reuse a previously downloaded cohort for the documented second --apply step."""
