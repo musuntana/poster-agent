@@ -22,6 +22,30 @@ The SQLite ledger atomically claims a key before provider dispatch and protects 
 
 The ledger and locking model are local, single-worker only. This policy is not user authentication, resource authorization, multi-tenant isolation, a distributed lock, or a production job queue. Shared, reverse-proxy, multi-worker, and public deployments remain unsupported.
 
+## Completed local artifact reconciliation
+
+A poster created with an idempotency key now records a minimal recovery receipt
+inside its final atomic `meta.json` write: the key, normalized request hash, and
+SHA-256 checksums of the product image, optional logo, background, v1 PNG and
+v1 specification. It does not save API keys or customer credentials in the receipt.
+
+If a single-worker process stops **after** writing all artifacts but **before**
+committing the `COMPLETED` ledger state, startup recovery verifies the receipt
+and files against the ledger's stored request hash. A complete exact match can
+be marked `COMPLETED` with a `RECOVERED_FROM_ARTIFACT` event; all other
+abandoned `RUNNING` jobs remain `UNKNOWN`.
+
+For an existing `UNKNOWN` record, use
+`POST /api/executions/{key}/reconcile` or the history UI's
+**核对本地产物** button. This only inspects local files and updates the SQLite
+ledger when a unique, matching, intact artifact exists. It does not generate
+a new image or call the paid model. Missing, corrupt, mismatched, ambiguous,
+legacy-without-receipt, or revised artifacts remain `UNKNOWN`. The user must
+not interpret an unresolved result as proof that the provider did not charge.
+
+This is conservative single-worker recovery, not a distributed transaction,
+full crash-durability guarantee, or cross-provider exactly-once billing.
+
 ## Execution history and browser retry lifecycle
 
 The UI fingerprints uploaded file bytes with SHA-256 (the digest is stored locally, not the file), so files with the same name/size/timestamp but different contents are not treated as the same request. While a request is RUNNING or UNKNOWN, the UI reuses its key after retries. After a request is confirmed COMPLETED, an intentional new submit gets a fresh key even when the form and files are identical.

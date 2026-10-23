@@ -353,3 +353,183 @@ def test_paid_budget_backfills_recent_completed_legacy_ai_runs(tmp_path, monkeyp
     with raises(LookupError):
         execution_store.get("m2c-paid-after-migration")
 
+def test_manual_reconcile_completed_poster_after_ledger_finish_failure(
+    tmp_path, monkeypatch, product_bytes
+):
+    """A saved poster can be recovered after its SQLite final commit failed."""
+    from app import storage
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    key = "receipt-post-commit-failure"
+
+    def fail_ledger_finish(_key, _result):
+        raise RuntimeError("simulated crash window after saving files")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(execution_store, "finish", fail_ledger_finish)
+        first = post(product_bytes, key)
+    assert first.status_code == 500
+    assert execution_store.get(key)["status"] == "UNKNOWN"
+    ids = [p.name for p in (tmp_path / "posters").iterdir() if p.is_dir()]
+    assert len(ids) == 1
+
+    repaired = client.post(f"/api/executions/{key}/reconcile")
+    assert repaired.status_code == 200, repaired.text
+    assert repaired.json()["status"] == "COMPLETED"
+    assert repaired.json()["result"]["poster_id"] == ids[0]
+    assert repaired.json()["result"] == storage.view(ids[0])
+    assert "RECOVERED_FROM_ARTIFACT" in [
+        event["event_type"] for event in repaired.json()["events"]
+    ]
+
+    second = post(product_bytes, key)
+    assert second.status_code == 201, second.text
+    assert second.json()["poster_id"] == ids[0]
+    assert len(list((tmp_path / "posters").iterdir())) == 1
+
+
+def test_startup_recovers_matching_finished_artifact_without_model_call(
+    tmp_path, monkeypatch
+):
+    import io
+    from PIL import Image
+    from app import storage
+    from app.schemas import PosterSpec
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    key, request_hash = "receipt-startup-01", "matching-request-hash"
+    assert execution_store.begin(key, request_hash) is None
+    spec = PosterSpec(title="演示商品", price="199", background_mode="local")
+    product = Image.new("RGBA", (260, 400), (25, 65, 105, 255))
+    background = Image.new("RGB", (1024, 1024), "#123456")
+    rendered = io.BytesIO()
+    background.save(rendered, format="PNG")
+    saved = storage.create(
+        spec, product, None, background, rendered.getvalue(),
+        idempotency_key=key, request_hash=request_hash,
+    )
+    assert execution_store.get(key)["status"] == "RUNNING"
+    assert execution_store.recover_incomplete() == 1
+    recovered = execution_store.get(key)
+    assert recovered["status"] == "COMPLETED"
+    assert recovered["result"] == saved
+    assert [event["event_type"] for event in recovered["events"]] == [
+        "CLAIMED", "RECOVERED_FROM_ARTIFACT",
+    ]
+    assert execution_store.recover_incomplete() == 0
+
+
+def test_corrupt_artifact_remains_unknown_without_paid_retry(
+    tmp_path, monkeypatch, product_bytes
+):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    key = "receipt-corrupt-artifact"
+
+    def fail_ledger_finish(_key, _result):
+        raise RuntimeError("simulate interrupted SQLite completion")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(execution_store, "finish", fail_ledger_finish)
+        assert post(product_bytes, key).status_code == 500
+
+    poster = next((tmp_path / "posters").iterdir())
+    (poster / "versions" / "v1.png").write_bytes(b"corrupted-png")
+    response = client.post(f"/api/executions/{key}/reconcile")
+    assert response.status_code == 200
+    assert response.json()["status"] == "UNKNOWN"
+    assert response.json()["result"] is None
+    assert post(product_bytes, key).status_code == 409
+
+
+def test_unmatched_request_receipt_never_promoted(tmp_path, monkeypatch):
+    import io
+    from PIL import Image
+    from app import storage
+    from app.schemas import PosterSpec
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    key = "receipt-wrong-request"
+    assert execution_store.begin(key, "original-hash") is None
+    spec = PosterSpec(title="演示商品", price="199", background_mode="local")
+    product = Image.new("RGBA", (260, 400), (25, 65, 105, 255))
+    background = Image.new("RGB", (1024, 1024), "#123456")
+    png = io.BytesIO()
+    background.save(png, format="PNG")
+    storage.create(
+        spec, product, None, background, png.getvalue(),
+        idempotency_key=key, request_hash="another-request",
+    )
+    assert execution_store.recover_incomplete() == 1
+    assert execution_store.get(key)["status"] == "UNKNOWN"
+    assert client.post(f"/api/executions/{key}/reconcile").json()["status"] == "UNKNOWN"
+
+
+def test_reconcile_missing_execution_returns_404(tmp_path, monkeypatch):
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    response = client.post("/api/executions/receipt-missing-key/reconcile")
+    assert response.status_code == 404
+
+def test_paid_generation_unknown_to_completed_e2e_without_second_model_call(
+    tmp_path, monkeypatch, product_bytes
+):
+    """POST AI -> uncertain ledger -> UNKNOWN -> reconcile -> GET -> idempotent retry."""
+    from PIL import Image
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "posters"))
+    monkeypatch.setenv("POSTER_MAX_AI_GENERATIONS_PER_HOUR", "20")
+    monkeypatch.setenv("POSTER_MAX_CONCURRENT_AI_GENERATIONS", "1")
+    calls = {"model": 0}
+
+    async def fake_provider(_style):
+        calls["model"] += 1
+        return Image.new("RGB", (1024, 1024), "#194166")
+
+    monkeypatch.setattr("app.main.generate_ai_background", fake_provider)
+    key = "receipt-paid-e2e-01"
+
+    def paid_post():
+        return client.post(
+            "/api/posters",
+            headers={"Idempotency-Key": key},
+            files={"product": ("sku.png", product_bytes, "image/png")},
+            data={**data(), "background_mode": "ai"},
+        )
+
+    def simulated_interrupted_finish(_key, _result):
+        raise RuntimeError("simulated interrupted final SQLite commit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(execution_store, "finish", simulated_interrupted_finish)
+        first = paid_post()
+
+    assert first.status_code == 500, first.text
+    assert client.get(f"/api/executions/{key}").json()["status"] == "UNKNOWN"
+    assert paid_post().status_code == 409
+    assert calls["model"] == 1
+
+    recovered = client.post(f"/api/executions/{key}/reconcile")
+    assert recovered.status_code == 200, recovered.text
+    body = recovered.json()
+    assert body["status"] == "COMPLETED"
+    assert body["result"]["background_mode"] == "ai"
+    poster_id = body["result"]["poster_id"]
+
+    image = client.get(body["result"]["image_url"])
+    assert image.status_code == 200
+    assert image.content.startswith(b"\x89PNG\r\n\x1a\n")
+    repeat = paid_post()
+    assert repeat.status_code == 201
+    assert repeat.json()["poster_id"] == poster_id
+    assert calls["model"] == 1
+
+    history = client.get("/api/executions?limit=10")
+    assert history.status_code == 200
+    assert any(
+        item["idempotency_key"] == key and item["status"] == "COMPLETED"
+        for item in history.json()["items"]
+    )
