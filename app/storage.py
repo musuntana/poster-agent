@@ -78,7 +78,13 @@ def _cleanup_stale_staging_dirs(storage_root: Path) -> None:
     Final poster directories are never matched by this name/pattern.
     """
     for candidate in storage_root.iterdir():
-        if candidate.is_dir() and _STAGING_NAME.fullmatch(candidate.name):
+        if not _STAGING_NAME.fullmatch(candidate.name):
+            continue
+        # A stale staging symlink is not a directory owned by this store.
+        # Unlink it instead of asking rmtree to traverse/refuse it.
+        if candidate.is_symlink():
+            candidate.unlink(missing_ok=True)
+        elif candidate.is_dir():
             shutil.rmtree(candidate)
 
 

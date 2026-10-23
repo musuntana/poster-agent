@@ -103,3 +103,20 @@ def test_failed_version_write_keeps_previous_version_readable(tmp_path, monkeypa
     assert updated["version"] == 2
     assert updated["spec"]["title"] == "新标题"
     assert storage.version_path(poster_id, 2).read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_stale_staging_symlink_is_unlinked_without_touching_target(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path))
+    important = tmp_path / "important-existing-directory"
+    important.mkdir()
+    (important / "keep.txt").write_text("keep", encoding="utf-8")
+    stale = tmp_path / (".staging-" + "b" * 32)
+    stale.symlink_to(important, target_is_directory=True)
+
+    result = storage.create(_spec(), _image(), None, _image(), _png_bytes())
+
+    assert result["version"] == 1
+    assert not stale.is_symlink()
+    assert (important / "keep.txt").read_text(encoding="utf-8") == "keep"
