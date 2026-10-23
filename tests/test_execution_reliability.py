@@ -219,6 +219,7 @@ def test_local_mode_remains_backward_compatible_without_idempotency_key(
     assert response.status_code == 201, response.text
     assert response.json()["background_mode"] == "local"
 
+
 def test_recent_execution_history_lists_completed_and_unknown_summaries(
     tmp_path, monkeypatch, product_bytes
 ):
@@ -248,6 +249,7 @@ def test_recent_execution_history_lists_completed_and_unknown_summaries(
 def test_recent_execution_history_limit_is_bounded():
     assert client.get("/api/executions?limit=0").status_code == 422
     assert client.get("/api/executions?limit=51").status_code == 422
+
 
 def test_paid_generation_concurrency_limit_does_not_claim_second_key(tmp_path, monkeypatch):
     monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
