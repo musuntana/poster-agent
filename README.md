@@ -60,7 +60,7 @@ uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
 **M5j 已支持按导入批次独立评分：** 使用 `uv run --locked python -m scripts.native_trial --reviewer local-operator --batch-journal data/eval_runs/m5g_import/batch_import_results.json` 仅盘点本批次最新 SKU 版本；全批 READY 后显式 `--score`，结果附带批次账本 SHA 和 SKU 清单。缺一个样本也不会自动缩小分母。详见 [M5j 批次独立评测](docs/m5j-batch-evaluation.md)。
 
-**M6 真实 SKU 评测准备：** 提供独立的 M5g 生成清单、授权与 SKU 治理注册表、逐输出人工评审模板，以及本地证据门禁脚本 `scripts.validate_m6_cohort`。该脚本核对完整批次、哈希、当前版本、输出尺寸与人工状态；不运行 OCR、不调用收费模型，也不计算产品质量分数。模板均为空表头，真实素材与评测证据必须保留在本机。详见 [M6 评测协议](docs/m6-real-sku-review-rubric.md)。
+**M6 真实 SKU 评测准备：** 已提供 M5g 生成清单、授权治理表、人工审核工作表和本地证据门禁；`scripts.prepare_m6_review` 可从完整 M5g 批次离线导出方图及原生 4:5 图，并生成全部为 `UNVERIFIED` 的本地审核草稿，`scripts.validate_m6_cohort` 则检查版本、图片/规格哈希和 M5j 证据范围。两者都不运行真实 OCR、不调用收费模型、不替代人工验收。详见 [M6 评测协议](docs/m6-real-sku-review-rubric.md)。
 
 **M5i 已支持按导入批次筛选审核队列：** 在现有 M5h 页面选择 M5g 的 `batch_import_results.json`，浏览器仅在内存中筛选对应 SKU，不上传该文件，也不改变全量 M5e 评分样本范围。详见 [M5i 本地批次筛选](docs/m5i-batch-review-scope.md)。
 
