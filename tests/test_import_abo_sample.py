@@ -159,8 +159,9 @@ def test_import_sample_publishes_complete_cohort_atomically(tmp_path, monkeypatc
     monkeypatch.setattr(importer, "_paths", lambda ids: {"image-1": "example.jpg"})
 
     def fake_download(path, destination):
-        destination.write_bytes(b"fixture-image")
-        return "a" * 64
+        raw = b"fixture-image"
+        destination.write_bytes(raw)
+        return hashlib.sha256(raw).hexdigest()
 
     monkeypatch.setattr(importer, "_download", fake_download)
     output = tmp_path / "cohort"
