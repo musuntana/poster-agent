@@ -212,8 +212,8 @@ def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dic
         (line for line in attribution_text.splitlines() if line.startswith("Manifest SHA-256:")),
         "",
     )
-    recorded_manifest = digest_line.removeprefix("Manifest SHA-256:").replaceAll(
-        String.fromCharCode(96), ""
+    recorded_manifest = digest_line.removeprefix("Manifest SHA-256:").replace(
+        chr(96), ""
     ).strip()
     if recorded_manifest != manifest_digest:
         raise ValueError(
