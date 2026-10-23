@@ -227,6 +227,7 @@ def validate_bundle(
         "can_score": readiness_data.get("can_score") is True,
         "scope_mode": readiness_data.get("scope_mode") == "batch_latest_per_sku",
         "journal_sha256": readiness_data.get("source_batch_journal_sha256") == journal_sha,
+        "native_manifest_sha256": readiness_data.get("native_trial_manifest_sha256") == native_manifest_sha,
         "manifest_sha256": readiness_data.get("source_manifest_sha256") == manifest_sha,
         "batch_sku_count": readiness_data.get("batch_sku_count") == len(expected_skus),
         "total_versions": readiness_data.get("total_versions") == len(expected_skus),

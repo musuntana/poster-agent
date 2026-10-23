@@ -179,6 +179,7 @@ def _bundle(tmp_path, monkeypatch, count: int = 2) -> dict:
     _write_csv(native_manifest_path, NATIVE_MANIFEST_FIELDS, native_manifest_rows)
     readiness_path = tmp_path / "native_trial_readiness.json"
     readiness = {
+        "native_trial_manifest_sha256": _sha(native_manifest_path),
         "schema_version": "1.0",
         "variant_id": "feed_4x5_native",
         "can_score": True,
@@ -243,6 +244,17 @@ def test_cohort_id_must_bind_current_journal_sha(tmp_path, monkeypatch):
         "cohort_id 必须由当前 M5g journal SHA-256 派生" in error
         for error in report["errors"]
     )
+
+
+def test_readiness_must_bind_exact_native_manifest(tmp_path, monkeypatch):
+    bundle = _bundle(tmp_path, monkeypatch)
+    readiness = bundle["readiness_data"]
+    readiness["native_trial_manifest_sha256"] = "0" * 64
+    bundle["readiness"].write_text(json.dumps(readiness), encoding="utf-8")
+
+    report = _validate(bundle)
+    assert report["status"] == "BLOCKED"
+    assert any("native_manifest_sha256" in error for error in report["errors"])
 
 
 def test_registry_authorization_must_be_explicit(tmp_path, monkeypatch):

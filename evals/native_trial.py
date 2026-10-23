@@ -6,6 +6,7 @@ does NOT run OCR, generate images with AI, or fabricate an accuracy metric.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -200,20 +201,25 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
 
 def save_trial_audit(output_dir: Path, summary: dict, rows: list[dict]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "native_trial_readiness.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
     fields = [
         "poster_id", "version", "sku_id", "status", "definite_labels",
         "ocr_text_labels", "unsure_labels", "product_sha256",
         "native_image_sha256", "action",
     ]
-    with (output_dir / "native_trial_manifest.csv").open(
-        "w", encoding="utf-8", newline=""
-    ) as handle:
+    manifest_path = output_dir / "native_trial_manifest.csv"
+    with manifest_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+    # Bind readiness to the exact manifest bytes from this audit run. Write
+    # readiness last so an interrupted write cannot advertise a complete pair.
+    summary["native_trial_manifest_sha256"] = hashlib.sha256(
+        manifest_path.read_bytes()
+    ).hexdigest()
+    (output_dir / "native_trial_readiness.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 SCORE_FILES = ("native_real_summary.json", "native_real_cases.csv", "native_trial_labels.csv")
