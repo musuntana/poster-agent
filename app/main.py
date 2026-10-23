@@ -166,8 +166,20 @@ async def create_poster(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Claim BEFORE calling a paid model. Requests without this header still use
-    # the M1 legacy behavior (for compatibility), and are not idempotent.
+    # Paid image generation must be idempotent at the API boundary. The browser
+    # already sends this header; reject direct API callers that could otherwise
+    # accidentally repeat a billable operation after a timeout or double-submit.
+    if spec.background_mode == "ai" and idempotency_key is None:
+        raise HTTPException(
+            status_code=428,
+            detail=(
+                "AI 生图可能产生费用，必须提供 Idempotency-Key。若上次请求结果未知，"
+                "请先查询执行记录，不要直接发起新的付费请求。"
+            ),
+        )
+
+    # Claim BEFORE calling a paid model. Local-background requests retain the
+    # legacy optional-key behavior; AI requests above cannot proceed without a key.
     if idempotency_key is not None:
         try:
             previous = execution_store.begin(idempotency_key, _fingerprint(spec, sku, brand_logo))
