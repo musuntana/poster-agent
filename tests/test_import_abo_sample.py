@@ -113,3 +113,24 @@ def test_import_sample_refuses_nonempty_destination_without_mutating_it(tmp_path
         import_sample(output, limit=1)
 
     assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+
+def test_existing_sample_rejects_explicit_limit_mismatch(tmp_path):
+    import csv
+
+    from scripts.import_abo_sample import _existing_sample
+
+    manifest = tmp_path / "real_skus.csv"
+    with manifest.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=["sku_id"])
+        writer.writeheader()
+        writer.writerow({"sku_id": "ABO-1"})
+        writer.writerow({"sku_id": "ABO-2"})
+    (tmp_path / "PUBLIC_DATASET_ATTRIBUTION.md").write_text("attribution", encoding="utf-8")
+
+    # Omitting --limit reuses the cohort's actual size.
+    assert _existing_sample(tmp_path)["count"] == 2
+    # Explicitly asking for a different cohort size must not silently reuse it.
+    with pytest.raises(ValueError, match="has 2 SKUs but --limit 20 was requested"):
+        _existing_sample(tmp_path, expected_limit=20)

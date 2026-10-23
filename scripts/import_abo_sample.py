@@ -181,8 +181,8 @@ def import_sample(output_dir: Path, limit: int = 20) -> dict:
     return result
 
 
-def _existing_sample(output_dir: Path) -> dict | None:
-    """Reuse a previously downloaded cohort for the documented second --apply step."""
+def _existing_sample(output_dir: Path, expected_limit: int | None = None) -> dict | None:
+    """Reuse a downloaded cohort, rejecting an explicitly requested size mismatch."""
     output_dir = output_dir.expanduser().resolve()
     manifest = output_dir / "real_skus.csv"
     attribution = output_dir / "PUBLIC_DATASET_ATTRIBUTION.md"
@@ -192,6 +192,11 @@ def _existing_sample(output_dir: Path) -> dict | None:
         count = sum(1 for _ in csv.DictReader(stream))
     if not 1 <= count <= 100:
         raise ValueError("Existing cohort manifest must contain 1..100 SKU rows")
+    if expected_limit is not None and count != expected_limit:
+        raise ValueError(
+            f"Existing cohort has {count} SKUs but --limit {expected_limit} was requested; "
+            "use the original limit or choose a fresh --output-dir."
+        )
     return {
         "dataset": "Amazon Berkeley Objects",
         "license": "CC BY 4.0",
@@ -205,14 +210,14 @@ def _existing_sample(output_dir: Path) -> dict | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Import a small public ABO cohort for local poster-agent smoke testing")
-    parser.add_argument("--limit", type=int, default=20)
+    parser.add_argument("--limit", type=int, default=None, help="SKU count (default: 20 for a new download; when reusing a cohort, omit to use its recorded row count)")
     parser.add_argument("--output-dir", type=Path, default=Path("data/real_trial/abo_public_sample"))
     parser.add_argument("--apply", action="store_true", help="Generate posters via M5g and audit M5j readiness")
     args = parser.parse_args()
     try:
-        imported = _existing_sample(args.output_dir) if args.apply else None
+        imported = _existing_sample(args.output_dir, args.limit) if args.apply else None
         if imported is None:
-            imported = import_sample(args.output_dir, args.limit)
+            imported = import_sample(args.output_dir, args.limit if args.limit is not None else 20)
         print(json.dumps(imported, ensure_ascii=False, indent=2))
         from scripts.real_sku_batch import preflight, run_batch
         manifest = Path(imported["manifest"])

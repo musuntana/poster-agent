@@ -27,7 +27,7 @@ Then generate posters with the existing M5g local pipeline and create an M5j rea
 uv run --locked python -m scripts.import_abo_sample --limit 20 --output-dir data/real_trial/abo_public_sample --apply
 ~~~
 
-Use a fresh output directory for each new cohort. The importer refuses to overwrite a non-empty directory. Downloads are staged in a temporary sibling directory and published only after the full cohort and attribution file are written; a network or decode failure cleans up the staging directory rather than leaving a partial cohort that blocks retries. If you run the first command to inspect the downloaded sample, the second command reuses that existing manifest and attribution file instead of downloading the cohort again.
+Use a fresh output directory for each new cohort. The importer refuses to overwrite a non-empty directory. Downloads are staged in a temporary sibling directory and published only after the full cohort and attribution file are written; a network or decode failure cleans up the staging directory rather than leaving a partial cohort that blocks retries. If you run the first command to inspect the downloaded sample, the second command reuses that existing manifest and attribution file instead of downloading the cohort again. If you explicitly pass `--limit` on the reuse step, it must match the downloaded row count; omit `--limit` to reuse the cohort's recorded size without ambiguity.
 
 Outputs include real_skus.csv, images/, PUBLIC_DATASET_ATTRIBUTION.md, and—when --apply is supplied—batch/batch_import_results.json plus m5j readiness artifacts.
 
