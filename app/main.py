@@ -1,6 +1,7 @@
 """M1 REST API + 极简页面。仅适合本地或可信环境使用。"""
 from __future__ import annotations
 import io
+from ipaddress import ip_address
 import json
 import hashlib
 import logging
@@ -9,8 +10,8 @@ from pathlib import Path
 from typing import Annotated
 import warnings
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Header, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import ValidationError
 from . import storage, execution_store
@@ -38,6 +39,38 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Poster Agent M3c", version="0.3.2", lifespan=lifespan)
+
+
+def _is_loopback_peer(host: str | None) -> bool:
+    """Allow only loopback socket peers; TestClient uses a synthetic hostname."""
+    if host == "testclient":
+        return True
+    if not host:
+        return False
+    try:
+        address = ip_address(host)
+    except ValueError:
+        return False
+    mapped_address = getattr(address, "ipv4_mapped", None)
+    if mapped_address is not None:
+        address = mapped_address
+    return address.is_loopback
+
+
+@app.middleware("http")
+async def enforce_local_only_network_boundary(request: Request, call_next):
+    """Reject direct requests from non-loopback peers; this is not authentication."""
+    peer_host = request.client.host if request.client is not None else None
+    if not _is_loopback_peer(peer_host):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "Poster Agent 仅允许本机直连；网络共享和反向代理部署未受支持"
+                )
+            },
+        )
+    return await call_next(request)
 app.include_router(brief_router)
 app.include_router(review_router)
 app.include_router(acceptance_router)
