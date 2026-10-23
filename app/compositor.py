@@ -85,6 +85,62 @@ def _break_lines(draw: ImageDraw.ImageDraw, value: str, font: ImageFont.FreeType
     return lines
 
 
+def _measure_text_layout(draw: ImageDraw.ImageDraw, spec: PosterSpec) -> dict:
+    """Validate and measure every fixed square-layout text region without rendering."""
+    title_font = _fit_text(draw, spec.title, 405, max_size=61, min_size=35)
+    title_lines = _break_lines(draw, spec.title, title_font, 410)
+    title_top = 274
+    subtitle_top = title_top + 86 * len(title_lines) + 10
+
+    subtitle_font = _fit_text(draw, spec.subtitle, 400, max_size=29, min_size=20)
+    if spec.subtitle:
+        subtitle_box = draw.textbbox((0, 0), spec.subtitle, font=subtitle_font)
+        subtitle_width = subtitle_box[2] - subtitle_box[0]
+        subtitle_height = subtitle_box[3] - subtitle_box[1]
+        if subtitle_width > 400 or subtitle_top + subtitle_height > 600:
+            raise ValueError("副标题超出方形海报安全排版区域，请缩短副标题")
+
+    price_value = "¥" + price_text(spec.price)
+    price_font = _fit_text(draw, price_value, 418, max_size=105, min_size=45)
+    price_box = draw.textbbox((0, 0), price_value, font=price_font)
+    if price_box[2] - price_box[0] > 418:
+        raise ValueError("价格过长，无法安全排版")
+
+    original_value = None
+    original_font = None
+    if spec.original_price is not None:
+        original_value = "原价 ¥" + price_text(spec.original_price)
+        original_font = _fit_text(draw, original_value, 405, max_size=28, min_size=20)
+        original_box = draw.textbbox((0, 0), original_value, font=original_font)
+        if original_box[2] - original_box[0] > 405:
+            raise ValueError("原价过长，无法安全排版")
+
+    cta_font = _fit_text(draw, spec.cta, 300, max_size=36, min_size=21)
+    cta_box = draw.textbbox((0, 0), spec.cta, font=cta_font)
+    if cta_box[2] - cta_box[0] > 300:
+        raise ValueError("CTA 文案过长，无法放入按钮")
+
+    return {
+        "title_font": title_font,
+        "title_lines": title_lines,
+        "title_top": title_top,
+        "subtitle_font": subtitle_font,
+        "subtitle_top": subtitle_top,
+        "price_value": price_value,
+        "price_font": price_font,
+        "original_value": original_value,
+        "original_font": original_font,
+        "cta_font": cta_font,
+        "cta_box": cta_box,
+    }
+
+
+def validate_square_layout(spec: PosterSpec) -> None:
+    """Reject fixed-layout text overflow before claiming an execution or calling a model."""
+    probe = Image.new("RGB", (1, 1))
+    _measure_text_layout(ImageDraw.Draw(probe), spec)
+
+
 def compose(spec: PosterSpec, product: Image.Image, logo: Image.Image | None, background: Image.Image) -> bytes:
     canvas = _cover(background, (SIZE, SIZE)).convert("RGBA")
     overlay = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
@@ -110,39 +166,34 @@ def compose(spec: PosterSpec, product: Image.Image, logo: Image.Image | None, ba
         canvas.alpha_composite(logo_image, (75, 82))
 
     draw = ImageDraw.Draw(canvas)
-    title_font = _fit_text(draw, spec.title, 405, max_size=61, min_size=35)
-    lines = _break_lines(draw, spec.title, title_font, 410)
-    top = 274
-    for line in lines:
-        draw.text((75, top), line, font=title_font, fill="#FFFFFF", stroke_width=0)
-        top += 86
-    subtitle_font = _fit_text(draw, spec.subtitle, 400, max_size=29, min_size=20)
+    layout = _measure_text_layout(draw, spec)
+    for index, line in enumerate(layout["title_lines"]):
+        draw.text(
+            (75, layout["title_top"] + index * 86), line,
+            font=layout["title_font"], fill="#FFFFFF", stroke_width=0,
+        )
     if spec.subtitle:
-        subtitle_box = draw.textbbox((0, 0), spec.subtitle, font=subtitle_font)
-        if subtitle_box[2] - subtitle_box[0] > 400 or top + 10 + (subtitle_box[3] - subtitle_box[1]) > 600:
-            raise ValueError("副标题超出方形海报安全排版区域，请缩短副标题")
-        draw.text((75, top+10), spec.subtitle, font=subtitle_font, fill="#CAE4FF")
+        draw.text(
+            (75, layout["subtitle_top"]), spec.subtitle,
+            font=layout["subtitle_font"], fill="#CAE4FF",
+        )
 
     draw.text((75, 610), "限时到手价", font=get_font(31), fill="#CDE6FF")
-    price_value = "¥" + price_text(spec.price)
-    price_font = _fit_text(draw, price_value, 418, max_size=105, min_size=45)
-    price_box = draw.textbbox((0, 0), price_value, font=price_font)
-    if price_box[2] - price_box[0] > 418:
-        raise ValueError("价格过长，无法安全排版")
-    draw.text((65, 668), price_value, font=price_font, fill="#FFE596", stroke_width=1, stroke_fill="#D59F52")
-    if spec.original_price is not None:
-        original = "原价 ¥" + price_text(spec.original_price)
-        original_font = _fit_text(draw, original, 405, max_size=28, min_size=20)
-        original_box = draw.textbbox((0, 0), original, font=original_font)
-        if original_box[2] - original_box[0] > 405:
-            raise ValueError("原价过长，无法安全排版")
-        draw.text((78, 800), original, font=original_font, fill="#BBD2ED")
+    draw.text(
+        (65, 668), layout["price_value"], font=layout["price_font"],
+        fill="#FFE596", stroke_width=1, stroke_fill="#D59F52",
+    )
+    if layout["original_value"] is not None:
+        draw.text(
+            (78, 800), layout["original_value"], font=layout["original_font"],
+            fill="#BBD2ED",
+        )
     draw.rounded_rectangle((76, 867, 410, 934), radius=28, fill="#F8CA5A")
-    cta_font = _fit_text(draw, spec.cta, 300, max_size=36, min_size=21)
-    box = draw.textbbox((0, 0), spec.cta, font=cta_font)
-    if box[2] - box[0] > 300:
-        raise ValueError("CTA 文案过长，无法放入按钮")
-    draw.text((243 - (box[2]-box[0])/2, 877), spec.cta, font=cta_font, fill="#203653")
+    cta_box = layout["cta_box"]
+    draw.text(
+        (243 - (cta_box[2] - cta_box[0]) / 2, 877), spec.cta,
+        font=layout["cta_font"], fill="#203653",
+    )
     output = io.BytesIO()
     canvas.convert("RGB").save(output, "PNG", optimize=True)
     return output.getvalue()
