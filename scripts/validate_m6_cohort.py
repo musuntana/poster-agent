@@ -242,6 +242,9 @@ def validate_bundle(
     if len(cohort_ids) != 1 or any(not row["cohort_id"] for row in registry_rows):
         errors.append("M6 registry 必须使用且仅使用一个非空 cohort_id")
     cohort_id = next(iter(cohort_ids), "")
+    expected_cohort_id = "m6-" + journal_sha[:12]
+    if cohort_id and cohort_id != expected_cohort_id:
+        errors.append("M6 cohort_id 必须由当前 M5g journal SHA-256 派生")
     registry_by_sku: dict[str, dict] = {}
     for index, row in enumerate(registry_rows, start=2):
         sku = row["sku_id"]
