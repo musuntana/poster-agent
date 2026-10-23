@@ -3,6 +3,7 @@ name = "poster-agent"
 version = "0.3.2"
 description = "Local-first ecommerce poster generation and quality evaluation"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115,<1",
