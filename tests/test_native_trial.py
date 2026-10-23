@@ -87,6 +87,9 @@ def test_empty_data_returns_honest_audit_without_model_inference(tmp_path, monke
     out = tmp_path / "result"
     assert run_trial(REVIEWER, out)["model_invoked"] is False
     assert (out / "native_trial_manifest.csv").read_text().startswith("poster_id")
+    readiness = json.loads((out / "native_trial_readiness.json").read_text())
+    manifest_sha = hashlib.sha256((out / "native_trial_manifest.csv").read_bytes()).hexdigest()
+    assert readiness["native_trial_manifest_sha256"] == manifest_sha
     assert not (out / "native_real_summary.json").exists()
 
 
