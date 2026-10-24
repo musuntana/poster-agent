@@ -15,8 +15,8 @@ router = APIRouter(prefix="/api/posters", tags=["channel-exports"])
 NATIVE_ID = "feed_4x5_native"
 NATIVE_PRODUCT_FOCUS_ID = "feed_4x5_native_product_focus"
 NATIVE_LAYOUTS = {
-    NATIVE_ID: ("split", render_native_feed),
-    NATIVE_PRODUCT_FOCUS_ID: ("product_focus", render_native_product_focus),
+    NATIVE_ID: "split",
+    NATIVE_PRODUCT_FOCUS_ID: "product_focus",
 }
 
 
@@ -50,7 +50,7 @@ def list_channel_exports(poster_id: str, version: int):
                 "layout_template": template,
                 "url": f"/api/posters/{poster_id}/versions/{version}/exports/{key}",
             }
-            for key, (template, _renderer) in NATIVE_LAYOUTS.items()
+            for key, template in NATIVE_LAYOUTS.items()
         ],
     }
 
@@ -66,8 +66,16 @@ def download_channel_export(poster_id: str, version: int, preset: str):
             spec_bytes = (poster / "versions" / f"v{version}.json").read_bytes()
             spec = PosterSpec.model_validate_json(spec_bytes)
             product, logo, background = storage.read_assets(poster_id)
-            _layout_template, renderer = NATIVE_LAYOUTS[preset]
-            result_png = renderer(spec, product, logo, background)
+            # Keep the established classic renderer as a direct call: M6's
+            # failure-path tests and callers monkeypatch this symbol to verify
+            # that a failed export remains UNVERIFIED instead of being counted
+            # as a generated image. Do not cache its callable in a registry.
+            if preset == NATIVE_ID:
+                result_png = render_native_feed(spec, product, logo, background)
+            else:
+                result_png = render_native_product_focus(
+                    spec, product, logo, background
+                )
             width, height = WIDTH, HEIGHT
             source_hash = hashlib.sha256(source).hexdigest()
             export_mode = "native_layout"
@@ -93,7 +101,7 @@ def download_channel_export(poster_id: str, version: int, preset: str):
         "X-Automatically-Accepted": "false",
     }
     if preset in NATIVE_LAYOUTS:
-        headers["X-Layout-Template"] = NATIVE_LAYOUTS[preset][0]
+        headers["X-Layout-Template"] = NATIVE_LAYOUTS[preset]
     if box is not None:
         headers["X-Content-Box"] = ",".join(str(v) for v in box)
     return Response(content=result_png, media_type="image/png", headers=headers)
