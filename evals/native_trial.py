@@ -126,10 +126,7 @@ def audit_trial(
                                         row["action"] = "OCR 字段或价格区域检查不完整，重新验收"
                                     else:
                                         row["status"] = "READY"
-                                        row["action"] = (
-                                            "可以参与原生 4:5 离线评测" if variant == VARIANT
-                                            else "本版式证据齐备，经典分栏评分器尚不支持此版式"
-                                        )
+                                        row["action"] = "本版式证据齐备，可单独运行对应版式离线评分"
                                         identifier = (poster.name, version)
                                         if report.get("ocr_runtime_evidence") == "RECORDED" and isinstance(
                                             report.get("ocr_runtime"), dict
@@ -166,9 +163,7 @@ def audit_trial(
     can_score = bool(ready and with_text and len(ready) == len(labeled)) and not any(
         row["status"] in {"SOURCE_INVALID", "REVIEW_STALE"} for row in rows
     )
-    # The M5d scorer only accepts the classic variant: queue readiness is not a
-    # promise that product-focus images can use classic scoring labels.
-    can_score = can_score and variant == VARIANT
+    # Selected-variant labels and OCR are validated together by M5d.
     if chosen is not None:
         can_score = can_score and len(rows) == len(chosen) and all(
             row["status"] == "READY" for row in rows
@@ -254,14 +249,14 @@ def _archive_previous_scores(output_dir: Path) -> str | None:
 
 def run_trial(
     reviewer: str, output_dir: Path, *, score: bool = False,
-    batch_scope: dict | None = None,
+    batch_scope: dict | None = None, variant: NativeVariant = VARIANT,
 ) -> dict:
     """Readiness is default; --score stages results and exposes them only on success.
 
     Earlier results move to a versioned history folder, never silently remain
     at the root after a newer audit discovers missing or stale evidence.
     """
-    summary, rows = audit_trial(reviewer, batch_scope=batch_scope)
+    summary, rows = audit_trial(reviewer, batch_scope=batch_scope, variant=variant)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["trial_run_id"] = uuid4().hex
     summary["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -284,13 +279,13 @@ def run_trial(
         target_versions = ({row["poster_id"]: row["version"] for row in rows}
                            if batch_scope is not None else None)
         csv_content, _meta = reviews.export(
-            reviewer, target_versions=target_versions
+            reviewer, target_versions=target_versions, variant=variant
         )
         with TemporaryDirectory(prefix=".score-staging-", dir=output_dir) as tmp:
             staged = Path(tmp)
             labels_path = staged / "native_trial_labels.csv"
             labels_path.write_text(csv_content, encoding="utf-8")
-            result = evaluate_native_reports(labels_path, staged)
+            result = evaluate_native_reports(labels_path, staged, variant=variant)
             result["trial_readiness_file"] = "native_trial_readiness.json"
             result["ready_distinct_product_sha256_count"] = summary[
                 "ready_distinct_product_sha256_count"
