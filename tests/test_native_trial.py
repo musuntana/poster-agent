@@ -433,3 +433,88 @@ def test_cli_variant_selection_preserves_classic_default_and_focus_metadata(
     assert classic["variant_id"] == "feed_4x5_native"
     assert not (focus_dir / "native_real_summary.json").exists()
     assert not (classic_dir / "native_real_summary.json").exists()
+
+
+
+def _eval_files_snapshot(output_dir):
+    """Include history and manifests: a rejected reuse must mutate nothing."""
+    return {
+        str(path.relative_to(output_dir)): path.read_bytes()
+        for path in output_dir.rglob("*") if path.is_file()
+    }
+
+
+def test_reusing_classic_score_directory_for_focus_preserves_all_evidence(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT
+
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    output = tmp_path / "trial"
+    run_trial(REVIEWER, output, score=True)
+    before = _eval_files_snapshot(output)
+    assert (output / "native_real_summary.json").is_file()
+
+    with pytest.raises(ValueError, match="版式.*独立目录"):
+        run_trial(REVIEWER, output, variant=PRODUCT_FOCUS_VARIANT)
+    assert _eval_files_snapshot(output) == before
+
+    with pytest.raises(ValueError, match="版式.*独立目录"):
+        run_trial(REVIEWER, output, score=True, variant=PRODUCT_FOCUS_VARIANT)
+    assert _eval_files_snapshot(output) == before
+
+
+def test_reusing_score_directory_for_another_reviewer_does_not_archive(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    _review(pid)
+    _run_ocr(pid, monkeypatch)
+    output = tmp_path / "trial"
+    run_trial(REVIEWER, output, score=True)
+    before = _eval_files_snapshot(output)
+
+    with pytest.raises(ValueError, match="审核员.*独立目录"):
+        run_trial("another-reviewer", output)
+    assert _eval_files_snapshot(output) == before
+
+
+def test_unclear_eval_directory_identity_fails_closed_before_any_write(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "empty-posters"))
+    output = tmp_path / "trial"
+    output.mkdir()
+    readiness = output / "native_trial_readiness.json"
+    readiness.write_text("{broken", encoding="utf-8")
+    before = _eval_files_snapshot(output)
+    with pytest.raises(ValueError, match="元数据.*独立目录"):
+        run_trial(REVIEWER, output)
+    assert _eval_files_snapshot(output) == before
+
+    readiness.unlink()
+    (output / "native_real_summary.json").write_text('{"old":true}')
+    before = _eval_files_snapshot(output)
+    with pytest.raises(ValueError, match="来源不明.*独立目录"):
+        run_trial(REVIEWER, output)
+    assert _eval_files_snapshot(output) == before
+
+
+def test_distinct_variant_directories_remain_independent(
+    tmp_path, monkeypatch,
+):
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT, VARIANT
+
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "empty-posters"))
+    classic = tmp_path / "classic"
+    focus = tmp_path / "focus"
+    classic_result = run_trial(REVIEWER, classic)
+    focus_result = run_trial(REVIEWER, focus, variant=PRODUCT_FOCUS_VARIANT)
+    assert classic_result["variant_id"] == VARIANT
+    assert focus_result["variant_id"] == PRODUCT_FOCUS_VARIANT
+    assert json.loads((classic / "native_trial_readiness.json").read_text())["variant_id"] == VARIANT
+    assert json.loads((focus / "native_trial_readiness.json").read_text())["variant_id"] == PRODUCT_FOCUS_VARIANT
+    assert not (classic / "native_real_summary.json").exists()
+    assert not (focus / "native_real_summary.json").exists()
