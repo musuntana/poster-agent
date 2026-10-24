@@ -307,14 +307,16 @@ def _execute_batch(batch_id: str) -> None:
 @router.post("/{batch_id}/apply", status_code=202)
 def apply_batch(batch_id: str, background_tasks: BackgroundTasks):
     batch_dir = _batch_dir(batch_id)
-    state = _read_state(batch_dir)
     with _ACTIVE_LOCK:
+        # Read status under the same lock used when the worker exits. Otherwise
+        # a stale RUNNING snapshot could overwrite a just-completed batch.
+        state = _read_state(batch_dir)
+        if state.get("status") == "COMPLETED":
+            return _public_state(batch_dir, state)
         if batch_id in _ACTIVE_BATCHES:
             raise HTTPException(status_code=409, detail="该批次正在执行")
         if _ACTIVE_BATCHES:
             raise HTTPException(status_code=409, detail="一次只允许执行一个本地批次")
-        if state.get("status") == "COMPLETED":
-            return _public_state(batch_dir, state)
         if state.get("status") == "RUNNING":
             state["status"] = "INTERRUPTED"
             state["error"] = "执行进程已不在当前服务中；续跑前会复用已有 SKU 账本"
@@ -339,12 +341,15 @@ def get_batch(batch_id: str):
     state = _read_state(batch_dir)
     if state.get("status") == "RUNNING":
         with _ACTIVE_LOCK:
-            active = batch_id in _ACTIVE_BATCHES
-        if not active:
-            state.update({
-                "status": "INTERRUPTED",
-                "error": "服务可能在批次执行期间重启；可安全续跑相同批次",
-                "updated_at": _now(),
-            })
-            _write_json_atomic(batch_dir / "batch_status.json", state)
+            if batch_id not in _ACTIVE_BATCHES:
+                # Re-read after the worker-exit lock: a stale RUNNING snapshot
+                # must not replace COMPLETED/FAILED written just before exit.
+                state = _read_state(batch_dir)
+                if state.get("status") == "RUNNING":
+                    state.update({
+                        "status": "INTERRUPTED",
+                        "error": "服务可能在批次执行期间重启；可安全续跑相同批次",
+                        "updated_at": _now(),
+                    })
+                    _write_json_atomic(batch_dir / "batch_status.json", state)
     return _public_state(batch_dir, state)
