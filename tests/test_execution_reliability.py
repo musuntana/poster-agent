@@ -589,3 +589,43 @@ def test_execution_history_rejects_unbounded_or_invalid_filters(tmp_path, monkey
     assert response.json()["offset"] == 0
     assert response.json()["has_more"] is False
 
+
+def test_unknown_paid_result_releases_concurrency_but_preserves_hourly_budget(
+    tmp_path, monkeypatch
+):
+    """An uncertain paid call must not block a worker forever or erase its cost."""
+    import pytest
+
+    monkeypatch.setenv("POSTER_EXECUTION_DB", str(tmp_path / "executions.sqlite3"))
+    assert execution_store.begin(
+        "m7-unknown-paid-first", "hash-first",
+        paid=True, max_paid_per_hour=2, max_concurrent_paid=1,
+    ) is None
+    execution_store.mark_unknown("m7-unknown-paid-first")
+    assert execution_store.get("m7-unknown-paid-first")["status"] == "UNKNOWN"
+
+    # UNKNOWN no longer occupies the one active paid worker, but still counts
+    # against the rolling paid-call budget because provider billing is uncertain.
+    assert execution_store.begin(
+        "m7-unknown-paid-second", "hash-second",
+        paid=True, max_paid_per_hour=2, max_concurrent_paid=1,
+    ) is None
+    execution_store.mark_unknown("m7-unknown-paid-second")
+
+    with pytest.raises(
+        execution_store.PaidGenerationLimitExceeded, match="每小时请求上限"
+    ):
+        execution_store.begin(
+            "m7-unknown-paid-third", "hash-third",
+            paid=True, max_paid_per_hour=2, max_concurrent_paid=1,
+        )
+    with pytest.raises(LookupError):
+        execution_store.get("m7-unknown-paid-third")
+
+    # Neither the uncertain run nor the budget rejection can trigger an
+    # automatic paid retry under the original key.
+    with pytest.raises(execution_store.ExecutionConflict):
+        execution_store.begin(
+            "m7-unknown-paid-first", "hash-first",
+            paid=True, max_paid_per_hour=2, max_concurrent_paid=1,
+        )
