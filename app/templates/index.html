@@ -103,6 +103,15 @@
 <div id="batchPlanSummary" class="tip"></div>
 <div id="batchRows" class="execution-history" aria-live="polite"></div>
 </section>
+<section id="cliBatchJournal" style="margin-bottom:24px">
+<h3>命令行批次账本状态（M5g）</h3>
+<p class="tip">只读默认目录 data/eval_runs/m5g_import/batch_import_results.json 中的 CLI 批次。它与上方网页批次分开统计；自定义 CLI 输出目录不会显示。此处不会生成海报、运行 OCR 或自动验收。</p>
+<div class="actions">
+<button id="refreshCliBatchJournal" class="secondary" type="button">刷新命令行账本</button>
+<span id="cliBatchJournalSummary" class="tip" aria-live="polite">尚未读取</span>
+</div>
+<div id="cliBatchJournalRows" class="execution-history" aria-live="polite"></div>
+</section>
 <section id="trialQueue" style="margin-bottom:24px">
 <h2>本地 4:5 验收队列</h2>
 <p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
@@ -1056,7 +1065,41 @@ async function loadHumanContext(){
     row.hidden=true;
   });
   $('humanStatus').textContent='正在载入当前版本校验值…';
-  refreshExportLink();
+  
+async function refreshCliBatchJournal(){
+  const summary=$('cliBatchJournalSummary');
+  const host=$('cliBatchJournalRows');
+  summary.textContent='正在读取命令行账本…';
+  host.replaceChildren();
+  try{
+    const response=await fetch('/api/cli-batches/status');
+    const state=await response.json();
+    if(!response.ok)throw Error(errorText(state));
+    if(!state.available){
+      summary.textContent=state.message;
+      return;
+    }
+    summary.textContent=(state.completed?'命令行批次已完成':'命令行批次未完成')+
+      ' · '+state.completed_sku_count+'/'+state.expected_sku_count+
+      ' 个 SKU 完成，待处理 '+state.pending_sku_count;
+    for(const item of (state.rows||[])){
+      const row=document.createElement('div');
+      row.className='execution-row';
+      const label=document.createElement('span');
+      label.className='summary';
+      label.textContent='SKU '+item.sku_id+' · '+
+        (item.status==='COMPLETED'?'已导入':'待处理');
+      row.appendChild(label);
+      host.appendChild(row);
+    }
+  }catch(err){
+    summary.textContent='读取命令行账本失败：'+err.message;
+  }
+}
+$('refreshCliBatchJournal').addEventListener('click',refreshCliBatchJournal);
+refreshCliBatchJournal();
+
+refreshExportLink();
   try{
     const reviewer=$('humanReviewer').value.trim();
     const response=await fetch(annotationUrl()+'?reviewer='+encodeURIComponent(reviewer));
