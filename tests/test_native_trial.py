@@ -398,3 +398,38 @@ def test_focus_audit_does_not_score_if_evidence_missing(
     assert readiness["can_score"] is False
     assert readiness["latest_score_status"] == "BLOCKED"
     assert not (destination / "native_real_summary.json").exists()
+
+
+def test_cli_variant_selection_preserves_classic_default_and_focus_metadata(
+    tmp_path, monkeypatch, capsys,
+):
+    import sys
+    from scripts import native_trial as cli
+
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "empty-posters"))
+    focus_dir = tmp_path / "focus-cli"
+    monkeypatch.setattr(sys, "argv", [
+        "native_trial", "--reviewer", REVIEWER,
+        "--variant", "feed_4x5_native_product_focus",
+        "--output-dir", str(focus_dir),
+    ])
+    assert cli.main() == 0
+    focus = json.loads(
+        (focus_dir / "native_trial_readiness.json").read_text()
+    )
+    assert focus["variant_id"] == "feed_4x5_native_product_focus"
+    assert focus["latest_score_status"] == "AUDIT_ONLY"
+    assert focus["model_invoked"] is False
+
+    classic_dir = tmp_path / "classic-cli"
+    monkeypatch.setattr(sys, "argv", [
+        "native_trial", "--reviewer", REVIEWER,
+        "--output-dir", str(classic_dir),
+    ])
+    assert cli.main() == 0
+    classic = json.loads(
+        (classic_dir / "native_trial_readiness.json").read_text()
+    )
+    assert classic["variant_id"] == "feed_4x5_native"
+    assert not (focus_dir / "native_real_summary.json").exists()
+    assert not (classic_dir / "native_real_summary.json").exists()
