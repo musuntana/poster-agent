@@ -630,7 +630,9 @@ function renderReviewQueue(data){
     const sku=batchReviewScope?.ids.get(item.poster_id);
     label.textContent=(sku?'SKU '+sku+' · ':'')+item.title+' · v'+item.version;
     const hint=document.createElement('div');hint.className='tip';
-    hint.textContent=(QUEUE_STATUS_LABELS[item.status]||item.status)+' · '+item.action;
+    hint.textContent=(item.status==='READY'&&data.variant_id==='feed_4x5_native_product_focus'
+      ? '证据齐备（当前评分器不支持）'
+      : (QUEUE_STATUS_LABELS[item.status]||item.status))+' · '+item.action;
     text.append(label,hint);
     const open=document.createElement('button');
     open.type='button';open.className='secondary';open.textContent='打开审核';
