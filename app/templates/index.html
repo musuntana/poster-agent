@@ -1197,6 +1197,7 @@ async function refreshBatchState(batchId){
     if(currentBatchId===batchId){
       $('batchStatus').textContent='读取批次状态失败：'+err.message;
       $('batchStatus').className='tip bad';
+      scheduleBatchPoll(batchId);
     }
   }
 }

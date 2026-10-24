@@ -82,7 +82,7 @@ async def _read_limited(upload: UploadFile, maximum: int) -> bytes:
 
 
 def _write_json_atomic(path: Path, value: dict) -> None:
-    temporary = path.with_name(path.name + ".tmp")
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     temporary.write_text(
         json.dumps(value, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -92,6 +92,8 @@ def _write_json_atomic(path: Path, value: dict) -> None:
 
 def _read_state(batch_dir: Path) -> dict:
     path = batch_dir / "batch_status.json"
+    if path.is_symlink():
+        raise HTTPException(status_code=409, detail="批次状态文件不能是符号链接")
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -190,6 +192,7 @@ async def create_batch(
     batch_id = uuid4().hex
     batch_dir = root / batch_id
     batch_dir.mkdir(mode=0o700, exist_ok=False)
+    batch = None
     try:
         (batch_dir / "manifest.csv").write_bytes(manifest_bytes)
         for name, payload in image_payloads:
@@ -243,7 +246,7 @@ async def create_batch(
         raise
     except Exception as exc:
         shutil.rmtree(batch_dir, ignore_errors=True)
-        if exc.__class__.__name__ == "BatchError":
+        if batch is not None and isinstance(exc, batch.BatchError):
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         if isinstance(exc, (UnicodeDecodeError, OSError, ValueError)):
             raise HTTPException(status_code=422, detail=f"批次预检失败：{exc}") from exc
