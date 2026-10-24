@@ -222,3 +222,31 @@ def test_web_batch_ui_exposes_explicit_preflight_apply_and_progress_controls():
     assert "scheduleBatchPoll" in html
     assert "只有点击生成后才开始处理" in html
     assert "不会调用 Qwen 生图或 OCR" in html
+
+def test_batch_status_does_not_overwrite_completion_from_a_stale_running_snapshot(
+    monkeypatch, tmp_path,
+):
+    response = _upload_batch(monkeypatch, tmp_path)
+    assert response.status_code == 201
+    batch_id = response.json()["batch_id"]
+    batch_dir = tmp_path / "batch-root" / batch_id
+    status_path = batch_dir / "batch_status.json"
+    state = json.loads(status_path.read_text(encoding="utf-8"))
+    state["status"] = "COMPLETED"
+    status_path.write_text(json.dumps(state), encoding="utf-8")
+
+    routes = import_module("app.batch_import_routes")
+    original_read_state = routes._read_state
+    calls = {"count": 0}
+
+    def stale_first_read(path):
+        calls["count"] += 1
+        actual = original_read_state(path)
+        return {**actual, "status": "RUNNING"} if calls["count"] == 1 else actual
+
+    monkeypatch.setattr(routes, "_read_state", stale_first_read)
+    response = client.get(f"/api/batches/{batch_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "COMPLETED"
+    assert json.loads(status_path.read_text(encoding="utf-8"))["status"] == "COMPLETED"
+

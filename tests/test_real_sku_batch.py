@@ -260,3 +260,20 @@ def test_preflight_rejects_duplicate_ids_and_more_than_100(
     ])
     with pytest.raises(batch.BatchError, match="1–100"):
         batch.preflight(manifest)
+
+def test_batch_rejects_symlinked_manifest_and_result_journal(batch_dir, tmp_path):
+    manifest = _manifest(batch_dir, _rows()[:1])
+    manifest_link = batch_dir / "manifest-link.csv"
+    manifest_link.symlink_to(manifest.name)
+    with pytest.raises(batch.BatchError, match="符号链接"):
+        batch.preflight(manifest_link)
+
+    output = tmp_path / "output"
+    output.mkdir()
+    external = tmp_path / "external-journal.json"
+    external.write_text("{}", encoding="utf-8")
+    (output / "batch_import_results.json").symlink_to(external)
+    with pytest.raises(batch.BatchError, match="符号链接"):
+        batch.run_batch(manifest, output, apply=True)
+    assert not storage.root().exists()
+

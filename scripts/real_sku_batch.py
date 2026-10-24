@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -68,7 +69,12 @@ def _validated_image(path: Path) -> str:
 
 
 def preflight(csv_path: Path) -> tuple[str, list[dict]]:
+    csv_path = Path(csv_path)
+    if csv_path.is_symlink():
+        raise BatchError("CSV 清单不能是符号链接")
     csv_path = csv_path.resolve(strict=True)
+    if not csv_path.is_file():
+        raise BatchError("CSV 清单必须是普通文件")
     base = csv_path.parent
     raw_csv = csv_path.read_bytes()
     with csv_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -135,7 +141,7 @@ def preflight(csv_path: Path) -> tuple[str, list[dict]]:
 
 def _write_json_atomic(destination: Path, value: dict) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    staging = destination.with_suffix(destination.suffix + ".tmp")
+    staging = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
     staging.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
                        encoding="utf-8")
     os.replace(staging, destination)
@@ -165,6 +171,8 @@ def run_batch(
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "batch_import_results.json"
+    if output.is_symlink():
+        raise BatchError("批次账本不能是符号链接")
     expected_sku_ids = [item["sku_id"] for item in prepared]
     if apply and output.exists():
         state = json.loads(output.read_text(encoding="utf-8"))
