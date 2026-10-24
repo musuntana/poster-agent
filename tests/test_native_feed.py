@@ -250,6 +250,9 @@ def test_two_native_templates_export_from_same_immutable_version(
     tmp_path, monkeypatch, product_bytes
 ):
     poster_id = _make(tmp_path, monkeypatch, product_bytes)
+    async def forbid_paid_provider(*_args, **_kwargs):
+        raise AssertionError("Comparing saved layouts must not call a paid model")
+    monkeypatch.setattr("app.main.generate_ai_background", forbid_paid_provider)
     original = storage.version_path(poster_id, 1).read_bytes()
     for_variant = "/api/posters/{}/versions/1/exports/{}"
     classic = client.get(for_variant.format(poster_id, "feed_4x5_native"))
