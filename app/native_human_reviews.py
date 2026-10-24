@@ -18,7 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app import storage
 from app.human_annotations import HumanFieldReview, REVIEWER_PATTERN, VALID_ID
-from app.native_acceptance import VARIANT, _render, _sources
+from app.native_acceptance import (
+    NativeVariant, PRODUCT_FOCUS_VARIANT, VARIANT, _render, _sources,
+)
 
 VISUAL_FIELDS = ("sku_integrity", "text_legibility", "composition")
 CORE_FIELDS = ("title", "price", "cta")
@@ -64,9 +66,11 @@ def _digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def _snapshot(poster_id: str, version: int) -> dict:
+def _snapshot(
+    poster_id: str, version: int, variant: NativeVariant = VARIANT,
+) -> dict:
     spec, spec_bytes, assets, square_png = _sources(poster_id, version)
-    native_png = _render(poster_id, spec)
+    native_png = _render(poster_id, spec, variant)
     fields = list((*VISUAL_FIELDS, *CORE_FIELDS))
     if spec.subtitle:
         fields.append("subtitle")
@@ -74,6 +78,7 @@ def _snapshot(poster_id: str, version: int) -> dict:
         fields.append("original_price")
     return {
         "spec": spec,
+        "variant_id": variant,
         "image_sha256": _digest(native_png),
         "source_image_sha256": _digest(square_png),
         "spec_sha256": _digest(spec_bytes),
@@ -82,14 +87,22 @@ def _snapshot(poster_id: str, version: int) -> dict:
     }
 
 
-def _folder(poster_id: str, version: int):
+def _folder(
+    poster_id: str, version: int, variant: NativeVariant = VARIANT,
+):
     storage.version_path(poster_id, version)
-    return (storage.poster_dir(poster_id) / "versions"
-            / f"v{version}.{VARIANT}.human_reviews")
+    if variant not in (VARIANT, PRODUCT_FOCUS_VARIANT):
+        raise ValueError("不支持的原生版式")
+    return (
+        storage.poster_dir(poster_id) / "versions"
+        / f"v{version}.{variant}.human_reviews"
+    )
 
 
-def _all_reviews(poster_id: str, version: int) -> list[dict]:
-    folder = _folder(poster_id, version)
+def _all_reviews(
+    poster_id: str, version: int, variant: NativeVariant = VARIANT,
+) -> list[dict]:
+    folder = _folder(poster_id, version, variant)
     records = []
     if folder.is_dir():
         for path in folder.glob("*.json"):
@@ -113,21 +126,24 @@ def _matches(review: dict, snapshot: dict) -> bool:
         review.get("source_image_sha256") == snapshot["source_image_sha256"],
         review.get("spec_sha256") == snapshot["spec_sha256"],
         review.get("asset_sha256") == snapshot["asset_sha256"],
-        review.get("variant_id") == VARIANT,
+        review.get("variant_id") == snapshot["variant_id"],
     ))
 
 
-def context(poster_id: str, version: int, reviewer: str | None = None) -> dict:
+def context(
+    poster_id: str, version: int, reviewer: str | None = None,
+    variant: NativeVariant = VARIANT,
+) -> dict:
     with storage.LOCK:
-        snapshot = _snapshot(poster_id, version)
-        history = _all_reviews(poster_id, version)
+        snapshot = _snapshot(poster_id, version, variant)
+        history = _all_reviews(poster_id, version, variant)
         latest = _latest_reviews(history)
         existing = latest.get(reviewer)
         if existing is not None and not _matches(existing, snapshot):
             raise NativeReviewConflict("旧人工标签与实际原生图或源素材不一致，请重新审核")
         return {
-            "poster_id": poster_id, "version": version, "variant_id": VARIANT,
-            "image_url": f"/api/posters/{poster_id}/versions/{version}/exports/{VARIANT}",
+            "poster_id": poster_id, "version": version, "variant_id": variant,
+            "image_url": f"/api/posters/{poster_id}/versions/{version}/exports/{variant}",
             "image_sha256": snapshot["image_sha256"],
             "source_image_sha256": snapshot["source_image_sha256"],
             "spec_sha256": snapshot["spec_sha256"],
@@ -142,9 +158,12 @@ def context(poster_id: str, version: int, reviewer: str | None = None) -> dict:
         }
 
 
-def submit(poster_id: str, version: int, payload: NativeReviewSubmission) -> dict:
+def submit(
+    poster_id: str, version: int, payload: NativeReviewSubmission,
+    variant: NativeVariant = VARIANT,
+) -> dict:
     with storage.LOCK:
-        snapshot = _snapshot(poster_id, version)
+        snapshot = _snapshot(poster_id, version, variant)
         if not all((
             payload.image_sha256 == snapshot["image_sha256"],
             payload.source_image_sha256 == snapshot["source_image_sha256"],
@@ -159,7 +178,7 @@ def submit(poster_id: str, version: int, payload: NativeReviewSubmission) -> dic
             "review_id": uuid4().hex,
             "poster_id": poster_id,
             "version": version,
-            "variant_id": VARIANT,
+            "variant_id": variant,
             "reviewer": payload.reviewer,
             "image_sha256": snapshot["image_sha256"],
             "source_image_sha256": snapshot["source_image_sha256"],
@@ -171,7 +190,7 @@ def submit(poster_id: str, version: int, payload: NativeReviewSubmission) -> dic
             "origin": "manual_review",
             "auto_approved": False,
         }
-        folder = _folder(poster_id, version)
+        folder = _folder(poster_id, version, variant)
         folder.mkdir(parents=True, exist_ok=True)
         destination = folder / f"{record['review_id']}.json"
         # Local-only, append-only; a later correction creates a new record.
@@ -181,10 +200,13 @@ def submit(poster_id: str, version: int, payload: NativeReviewSubmission) -> dic
 
 
 def export(
-    reviewer: str, *, target_versions: dict[str, int] | None = None
+    reviewer: str, *, target_versions: dict[str, int] | None = None,
+    variant: NativeVariant = VARIANT,
 ) -> tuple[str, dict]:
     if re.fullmatch(REVIEWER_PATTERN, reviewer) is None:
         raise ValueError("审核员代号不合法")
+    if variant not in (VARIANT, PRODUCT_FOCUS_VARIANT):
+        raise ValueError("不支持的原生版式")
     rows, considered, uncertain = [], 0, 0
     with storage.LOCK:
         for poster in sorted(storage.root().glob("*")):
@@ -202,10 +224,10 @@ def export(
                     version = int(source.stem[1:])
                     if target_versions is not None and version != target_versions[poster.name]:
                         continue
-                    latest = _latest_reviews(_all_reviews(poster.name, version)).get(reviewer)
+                    latest = _latest_reviews(_all_reviews(poster.name, version, variant)).get(reviewer)
                     if latest is None:
                         continue
-                    snapshot = _snapshot(poster.name, version)
+                    snapshot = _snapshot(poster.name, version, variant)
                     if not _matches(latest, snapshot):
                         raise NativeReviewConflict(
                             f"{poster.name} v{version}: 人工标注和导出图/源素材摘要不一致"
@@ -218,7 +240,7 @@ def export(
                             continue
                         rows.append({
                             "poster_id": poster.name, "version": version,
-                            "variant_id": VARIANT, "field": key,
+                            "variant_id": variant, "field": key,
                             "defective": "true" if result["judgment"] == "defective" else "false",
                             "image_sha256": snapshot["image_sha256"],
                             "source_image_sha256": snapshot["source_image_sha256"],

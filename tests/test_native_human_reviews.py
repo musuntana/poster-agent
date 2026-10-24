@@ -15,6 +15,8 @@ from app.main import app
 
 client = TestClient(app)
 REVIEWER = "native-operator"
+VARIANT = "feed_4x5_native"
+PRODUCT_FOCUS = "feed_4x5_native_product_focus"
 
 
 def _create(tmp_path, monkeypatch, product_bytes):
@@ -29,8 +31,8 @@ def _create(tmp_path, monkeypatch, product_bytes):
     return response.json()["poster_id"]
 
 
-def _url(pid, version=1):
-    return f"/api/posters/{pid}/versions/{version}/exports/feed_4x5_native/human-review"
+def _url(pid, version=1, variant=VARIANT):
+    return f"/api/posters/{pid}/versions/{version}/exports/{variant}/human-review"
 
 
 def _payload(info, reviewer=REVIEWER, defective=None, unsure=None):
@@ -186,3 +188,60 @@ def test_no_human_reviews_means_no_approval_and_no_empty_csv(
     unsure = _payload(context, unsure=context["fields_to_review"])
     assert client.post(_url(pid), json=unsure).status_code == 201
     assert client.get("/api/annotations/native-4x5/export.csv?reviewer=" + REVIEWER).status_code == 422
+
+
+def test_product_focus_human_reviews_are_isolated_from_classic_labels(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    focus = client.get(_url(pid, variant=PRODUCT_FOCUS)).json()
+    assert focus["variant_id"] == PRODUCT_FOCUS
+    assert focus["auto_approved"] is False
+    image = client.get(focus["image_url"])
+    assert image.status_code == 200
+    assert image.headers["x-layout-template"] == "product_focus"
+    assert focus["image_sha256"] == hashlib.sha256(image.content).hexdigest()
+
+    saved = client.post(
+        _url(pid, variant=PRODUCT_FOCUS),
+        json=_payload(focus, defective=["sku_integrity"]),
+    )
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["variant_id"] == PRODUCT_FOCUS
+
+    classic = client.get(_url(pid)).json()
+    assert classic["variant_id"] == VARIANT
+    assert classic["review_count"] == 0
+    assert classic["image_sha256"] != focus["image_sha256"]
+
+    versions = storage.poster_dir(pid) / "versions"
+    focus_folder = versions / f"v1.{PRODUCT_FOCUS}.human_reviews"
+    classic_folder = versions / f"v1.{VARIANT}.human_reviews"
+    assert len(list(focus_folder.glob("*.json"))) == 1
+    assert not classic_folder.exists()
+
+    # Variant-specific CSV exports cannot consume one another's labels.
+    assert client.get(
+        "/api/annotations/native-4x5/export.csv?reviewer=" + REVIEWER
+    ).status_code == 422
+    csv_response = client.get(
+        "/api/annotations/native-4x5-product-focus/export.csv?reviewer=" + REVIEWER
+    )
+    rows = _csv_rows(csv_response)
+    assert rows
+    assert all(row["variant_id"] == PRODUCT_FOCUS for row in rows)
+    assert next(row["defective"] for row in rows if row["field"] == "sku_integrity") == "true"
+
+
+def test_product_focus_labels_reject_stale_source_evidence(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    url = _url(pid, variant=PRODUCT_FOCUS)
+    context = client.get(url).json()
+    asset = storage.poster_dir(pid) / "assets" / "product.png"
+    original = asset.read_bytes()
+    asset.write_bytes(original + b"changed")
+    assert client.post(url, json=_payload(context)).status_code == 409
+    asset.write_bytes(original)
+    assert client.post(url, json=_payload(context)).status_code == 201

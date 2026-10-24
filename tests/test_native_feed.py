@@ -219,6 +219,8 @@ def test_ui_exposes_product_focus_with_separate_acceptance_boundary():
     response = client.get("/")
     assert response.status_code == 200
     assert 'value="feed_4x5_native_product_focus"' in response.text
-    assert "商品主体优先版式：已接入独立 OCR / 规则检查" in response.text
-    assert "人工审核流程尚未接入" in response.text
+    assert "const isNativeLayout=isBaselineNative||isProductFocus;" in response.text
+    assert "OCR 报告与人工标签均独立绑定此版式" in response.text
+    assert "exports/'+variant+'/human-review" in response.text
+    assert "/api/annotations/native-4x5-product-focus/export.csv" in response.text
     assert "exports/'+variant+'/acceptance" in response.text

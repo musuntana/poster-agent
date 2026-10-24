@@ -4,7 +4,7 @@ M4b 已经拥有真正的 1080×1350 原生导出，M4c 已有独立的可选 OC
 
 ## 网页使用流程
 
-1. 本地启动 FastAPI，上传真实商品图、创建海报并选择 **04 · 多渠道导出 → 4:5 原生排版**。
+1. 本地启动 FastAPI，上传真实商品图、创建海报并选择 **04 · 多渠道导出 → 经典原生 4:5** 或 **商品主体优先**。
 2. 对照页面中的**实际 1080×1350 导出预览**，在“4:5 原生海报人工验收”填写审核员代号。
 3. 对每个显示的项选择 `correct`（正确）、`defective`（有缺陷）或 `unsure`（无法判断），必要时记录错误位置与原因。必须检查：
    - 商品图是否完整/无遮挡（`sku_integrity`）
@@ -19,9 +19,10 @@ M4b 已经拥有真正的 1080×1350 原生导出，M4c 已有独立的可选 OC
 ## HTTP 与证据绑定
 
 ```text
-GET  /api/posters/{poster_id}/versions/{version}/exports/feed_4x5_native/human-review?reviewer=operator-01
-POST /api/posters/{poster_id}/versions/{version}/exports/feed_4x5_native/human-review
+GET  /api/posters/{poster_id}/versions/{version}/exports/{variant}/human-review?reviewer=operator-01
+POST /api/posters/{poster_id}/versions/{version}/exports/{variant}/human-review
 GET  /api/annotations/native-4x5/export.csv?reviewer=operator-01
+GET  /api/annotations/native-4x5-product-focus/export.csv?reviewer=operator-01
 ```
 
 GET 上下文返回原生导出 URL、预计字段、指定审核员最近的标注及：
@@ -34,10 +35,10 @@ GET 上下文返回原生导出 URL、预计字段、指定审核员最近的标
 POST 必须提交上述全部摘要与所有当期字段，任意不一致返回 **409**；字段缺失或格式错误返回 **422**；版本不存在返回 **404**。保存到：
 
 ```text
-data/posters/<id>/versions/vN.feed_4x5_native.human_reviews/<review_id>.json
+data/posters/<id>/versions/vN.<variant>.human_reviews/<review_id>.json
 ```
 
-这与方图 `vN.human_reviews/` **物理隔离**。任何已保存审核记录都不能使后续改价版本自动通过人工审核；修改源素材或规格后，读取当前审核员旧记录、导出其旧标签都会返回 409。
+经典分栏和商品主体优先分别使用 `vN.feed_4x5_native.human_reviews/` 与 `vN.feed_4x5_native_product_focus.human_reviews/`，并与方图 `vN.human_reviews/` **物理隔离**。任何已保存审核记录都不能使后续改价版本自动通过人工审核；修改源素材或规格后，读取当前审核员旧记录、导出其旧标签都会返回 409。
 
 ## CSV 导出
 
@@ -45,9 +46,9 @@ data/posters/<id>/versions/vN.feed_4x5_native.human_reviews/<review_id>.json
 poster_id,version,variant_id,field,defective,image_sha256,source_image_sha256,reviewer
 ```
 
-`variant_id` 始终是 `feed_4x5_native`。人工 `unsure` 会被剔除，不能转为 `false`；全为 `unsure` 时拒绝输出空评测集。CSV 带 BOM 以方便使用中文办公软件。CSV 本身不提供 OCR 预测值，因此**不能仅凭这个 CSV 声称模型的准确率/F1**。
+`variant_id` 按所审核的版式记录：`feed_4x5_native` 或 `feed_4x5_native_product_focus`。人工 `unsure` 会被剔除，不能转为 `false`；全为 `unsure` 时拒绝输出空评测集。CSV 带 BOM 以方便使用中文办公软件。CSV 本身不提供 OCR 预测值，因此**不能仅凭这个 CSV 声称模型的准确率/F1**。
 
-原 M3c 方图标签与评测接口完全不变；旧的 `scripts.evaluate_real_reports` 面向方图报告，不应直接把这份 4:5 CSV 喂给该评测器冒充原版指标。后续要做 4:5 的 FP/FN/F1，需先运行真实 4:5 OCR 并开发明确关联 `variant_id` 的评测器。
+原 M3c 方图标签与评测接口完全不变；M5c 只记录人工标签，不代表模型准确率。旧的 `scripts.evaluate_real_reports` 面向方图报告，不应直接把任一 4:5 CSV 喂给该评测器冒充原版指标。后续要做各版式的 FP/FN/F1，需先运行对应版式的真实 4:5 OCR 并开发明确关联 `variant_id` 的评测器。
 
 ## 工程检查及可信边界
 
