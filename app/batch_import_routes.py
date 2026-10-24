@@ -9,10 +9,11 @@ import shutil
 import threading
 from datetime import datetime, timezone
 from importlib import import_module
+from typing import Literal
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 
 router = APIRouter(prefix="/api/batches", tags=["batch-import"])
 
@@ -154,6 +155,78 @@ def _public_state(batch_dir: Path, state: dict) -> dict:
             "sku_ids": sku_ids,
         },
         "rows": rows,
+    }
+
+
+@router.get("")
+def list_batches(
+    limit: int = Query(default=10, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10000),
+    status: Literal["READY", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"]
+    | None = Query(default=None),
+):
+    """Read-only summary of locally staged batches, newest first.
+
+    Never follows symlinks, exposes source paths, or rewrites a stale state
+    file. A RUNNING record without a live worker is *displayed* as INTERRUPTED;
+    fetching that individual batch performs the existing persisted recovery.
+    """
+    root = _root()
+    if not root.is_dir():
+        return {
+            "items": [], "limit": limit, "offset": offset, "status": status,
+            "has_more": False, "skipped_invalid": 0,
+        }
+    with _ACTIVE_LOCK:
+        active = _ACTIVE_BATCHES.copy()
+    batches = []
+    skipped_invalid = 0
+    for folder in root.iterdir():
+        if folder.is_symlink() or not _BATCH_ID.fullmatch(folder.name):
+            continue
+        if not folder.is_dir():
+            continue
+        try:
+            state = _read_state(folder)
+        except HTTPException:
+            skipped_invalid += 1
+            continue
+        plan = state.get("plan")
+        sku_ids = plan.get("sku_ids") if isinstance(plan, dict) else None
+        phase = state.get("status")
+        count = state.get("processed")
+        created = state.get("created_at")
+        updated = state.get("updated_at")
+        if (
+            phase not in {"READY", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"}
+            or not isinstance(sku_ids, list)
+            or not 1 <= len(sku_ids) <= 100
+            or type(count) is not int or not 0 <= count <= len(sku_ids)
+            or not isinstance(created, str)
+            or not isinstance(updated, str)
+        ):
+            skipped_invalid += 1
+            continue
+        if phase == "RUNNING" and folder.name not in active:
+            phase = "INTERRUPTED"
+        if status is not None and phase != status:
+            continue
+        batches.append({
+            "batch_id": folder.name,
+            "status": phase,
+            "created_at": created,
+            "updated_at": updated,
+            "processed": count,
+            "total": len(sku_ids),
+        })
+    batches.sort(key=lambda item: (item["updated_at"], item["batch_id"]), reverse=True)
+    return {
+        "items": batches[offset:offset + limit],
+        "limit": limit,
+        "offset": offset,
+        "status": status,
+        "has_more": len(batches) > offset + limit,
+        "skipped_invalid": skipped_invalid,
     }
 
 
