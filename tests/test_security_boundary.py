@@ -83,7 +83,7 @@ def test_cross_origin_post_is_rejected_before_route_execution():
     )
 
     assert response.status_code == 403
-    assert "跨站写请求" in response.json()["detail"]
+    assert "跨站请求" in response.json()["detail"]
 
 
 def test_origin_mismatch_is_rejected_without_fetch_metadata():
@@ -138,3 +138,38 @@ def test_localhost_origin_is_accepted_for_local_browser_writes():
     )
 
     assert response.status_code == 422
+
+
+def test_cross_origin_get_is_rejected_before_route_execution():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50012),
+    )
+
+    response = client.get(
+        "/health",
+        headers={
+            "Origin": "https://attacker.example",
+            "Sec-Fetch-Site": "cross-site",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "跨站请求" in response.json()["detail"]
+
+
+def test_origin_mismatch_on_read_is_rejected_without_fetch_metadata():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50013),
+    )
+
+    response = client.get(
+        "/health",
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert "Origin" in response.json()["detail"]
