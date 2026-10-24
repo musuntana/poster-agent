@@ -203,13 +203,35 @@ def new_version(poster_id: str, spec: PosterSpec, render_bytes: bytes) -> dict:
         return view(poster_id)
 
 
-def version_path(poster_id: str, version: int) -> Path:
+def version_view(poster_id: str, version: int) -> dict:
+    """Return an immutable published version; ignore orphan files above latest_version."""
     if version < 1:
         raise FileNotFoundError("版本不存在")
-    target = poster_dir(poster_id) / "versions" / f"v{version}.png"
-    if not target.is_file():
+    path = poster_dir(poster_id)
+    meta = json.loads((path / "meta.json").read_text(encoding="utf-8"))
+    latest = int(meta["latest_version"])
+    if version > latest:
         raise FileNotFoundError("版本不存在")
-    return target
+    spec_path = path / "versions" / f"v{version}.json"
+    image_path = path / "versions" / f"v{version}.png"
+    if not spec_path.is_file() or not image_path.is_file():
+        raise FileNotFoundError("版本不存在")
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    return {
+        "poster_id": poster_id,
+        "version": version,
+        "spec": spec,
+        "image_url": f"/api/posters/{poster_id}/versions/{version}/image",
+        "versions": list(range(1, latest + 1)),
+        "background_mode": meta["background_mode"],
+    }
+
+
+def version_path(poster_id: str, version: int) -> Path:
+    # Resolve through the published metadata pointer so an orphan vN.png left by
+    # an interrupted write is never directly downloadable as a committed version.
+    version_view(poster_id, version)
+    return poster_dir(poster_id) / "versions" / f"v{version}.png"
 
 
 def find_completed_execution(key: str, request_hash: str) -> dict | None:

@@ -322,6 +322,14 @@ async def revise_poster(poster_id: str, edit: PosterEdit):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@app.get("/api/posters/{poster_id}/versions/{version}")
+async def poster_version(poster_id: str, version: int):
+    try:
+        return storage.version_view(poster_id, version)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.get("/api/posters/{poster_id}/versions/{version}/image")
 async def poster_image(poster_id: str, version: int):
     try:
