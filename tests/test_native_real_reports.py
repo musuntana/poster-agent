@@ -265,3 +265,129 @@ def test_no_native_labels_rejects_square_only_csv(tmp_path, monkeypatch, product
     file.write_bytes(response.content)
     with pytest.raises(ValueError, match="缺少必要列"):
         read_native_labels(file)
+
+
+def test_product_focus_scoring_uses_own_labels_ocr_and_report_hashes(
+    tmp_path, monkeypatch, product_bytes,
+):
+    """Focus metrics may only come from matching focus pixels and OCR evidence."""
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT, VARIANT
+
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    variant = PRODUCT_FOCUS_VARIANT
+    review_url = f"/api/posters/{pid}/versions/1/exports/{variant}/human-review"
+    ctx_response = client.get(review_url)
+    assert ctx_response.status_code == 200, ctx_response.text
+    ctx = ctx_response.json()
+    payload = {
+        "reviewer": REVIEWER,
+        "image_sha256": ctx["image_sha256"],
+        "source_image_sha256": ctx["source_image_sha256"],
+        "spec_sha256": ctx["spec_sha256"],
+        "asset_sha256": ctx["asset_sha256"],
+        "fields": {
+            name: {"judgment": "correct", "reason": ""}
+            for name in ctx["fields_to_review"]
+        },
+    }
+    assert client.post(review_url, json=payload).status_code == 201
+
+    def focus_ocr(path):
+        return [
+            {"text": "电动牙刷促销", "score": 0.99, "bbox": [70, 802, 475, 853]},
+            {"text": "限时福利", "score": 0.99, "bbox": [70, 944, 300, 970]},
+            {"text": "¥199", "score": 0.99, "bbox": [68, 1025, 300, 1092]},
+            {"text": "原价 ¥399", "score": 0.99, "bbox": [70, 1140, 330, 1176]},
+            {"text": "立即购买", "score": 0.99, "bbox": [685, 1140, 942, 1184]},
+        ]
+
+    monkeypatch.setattr("app.native_acceptance.recognize", focus_ocr)
+    report = client.post(
+        f"/api/posters/{pid}/versions/1/exports/{variant}/acceptance",
+        json={"ocr_mode": "paddle"},
+    )
+    assert report.status_code == 200, report.text
+    assert report.json()["ocr_status"] == "OK"
+
+    labels_response = client.get(
+        "/api/annotations/native-4x5-product-focus/export.csv",
+        params={"reviewer": REVIEWER},
+    )
+    assert labels_response.status_code == 200, labels_response.text
+    labels = tmp_path / "product_focus_labels.csv"
+    labels.write_bytes(labels_response.content)
+
+    assert all(
+        record["variant_id"] == variant
+        for record in read_native_labels(labels, variant=variant)
+    )
+    with pytest.raises(ValueError):
+        read_native_labels(labels)  # Classic default must reject focus.
+    with pytest.raises(ValueError):
+        evaluate_native_reports(labels, tmp_path / "cross_variant")
+    assert not (tmp_path / "cross_variant").exists()
+
+    scored = evaluate_native_reports(
+        labels, tmp_path / "focus_output", variant=variant
+    )
+    assert scored["variant_id"] == variant
+    assert scored["poster_versions"] == 1
+    assert scored["ocr_text_labels"] == 5
+    assert scored["ocr_engine_execution"] == "saved_report_only"
+    assert scored["metrics"]["confusion"]["TN"] >= 1
+    assert scored["source_report_sha256"]
+    assert (tmp_path / "focus_output/native_real_cases.csv").is_file()
+    assert not (storage.poster_dir(pid) / "versions"
+                / f"v1.{VARIANT}.acceptance.paddle.json").exists()
+
+    # A classic-only human label can never masquerade as a focus label.
+    classic = _context(pid)
+    _submit(pid, classic)
+    classic_labels = _labels(tmp_path)
+    with pytest.raises(ValueError):
+        evaluate_native_reports(
+            classic_labels, tmp_path / "wrong_focus", variant=variant
+        )
+    assert not (tmp_path / "wrong_focus").exists()
+
+
+def test_product_focus_scoring_rejects_stale_saved_focus_report(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT
+
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    variant = PRODUCT_FOCUS_VARIANT
+    url = f"/api/posters/{pid}/versions/1/exports/{variant}/human-review"
+    ctx = client.get(url).json()
+    data = {
+        "reviewer": REVIEWER,
+        "image_sha256": ctx["image_sha256"],
+        "source_image_sha256": ctx["source_image_sha256"],
+        "spec_sha256": ctx["spec_sha256"],
+        "asset_sha256": ctx["asset_sha256"],
+        "fields": {
+            field: {"judgment": "correct", "reason": ""}
+            for field in ctx["fields_to_review"]
+        },
+    }
+    assert client.post(url, json=data).status_code == 201
+    monkeypatch.setattr("app.native_acceptance.recognize", _ocr)
+    response = client.post(
+        f"/api/posters/{pid}/versions/1/exports/{variant}/acceptance",
+        json={"ocr_mode": "paddle"},
+    )
+    assert response.status_code == 200
+    labels_resp = client.get(
+        "/api/annotations/native-4x5-product-focus/export.csv",
+        params={"reviewer": REVIEWER},
+    )
+    labels = tmp_path / "focus.csv"
+    labels.write_bytes(labels_resp.content)
+    asset = storage.poster_dir(pid) / "assets" / "background.png"
+    asset.write_bytes(asset.read_bytes() + b"changed")
+    with pytest.raises(ValueError, match="未过期"):
+        evaluate_native_reports(
+            labels, tmp_path / "stale_output", variant=variant
+        )
+    assert not (tmp_path / "stale_output").exists()

@@ -115,7 +115,7 @@
 </section>
 <section id="trialQueue" style="margin-bottom:24px">
 <h2>本地 4:5 验收队列</h2>
-<p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。按版式独立列出最新版本的人工审核与 OCR 状态。经典分栏 READY 表示可参与现有 M5e 评分；商品主体优先 READY 仅表示当前版式证据齐备，尚不可复用经典版式评分工具；都不代表可投放。</p>
+<p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。按版式独立列出最新版本的人工审核与 OCR 状态。READY 表示当前选中版式的人工审核与 OCR 证据齐备，可在 M5e 中指定相同的 --variant 单独评分；两种版式的标签与报告不能混用，也都不代表可投放。</p>
 <div class="actions">
 <label for="reviewQueueVariant">验收版式</label>
 <select id="reviewQueueVariant" aria-label="选择当前验收队列对应的 4:5 原生版式">
@@ -630,8 +630,8 @@ function renderReviewQueue(data){
     const sku=batchReviewScope?.ids.get(item.poster_id);
     label.textContent=(sku?'SKU '+sku+' · ':'')+item.title+' · v'+item.version;
     const hint=document.createElement('div');hint.className='tip';
-    hint.textContent=(item.status==='READY'&&data.variant_id==='feed_4x5_native_product_focus'
-      ? '证据齐备（当前评分器不支持）'
+    hint.textContent=(item.status==='READY'
+      ? '证据齐备（可按此版式单独评分，非投放批准）'
       : (QUEUE_STATUS_LABELS[item.status]||item.status))+' · '+item.action;
     text.append(label,hint);
     const open=document.createElement('button');

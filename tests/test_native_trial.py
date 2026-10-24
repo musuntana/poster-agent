@@ -321,3 +321,115 @@ def test_mocked_plain_list_ocr_is_explicitly_unrecorded(
     scored = run_trial(REVIEWER, out, score=True)
     assert scored["ocr_runtime_unrecorded_versions"] == 1
     assert scored["ocr_runtime_attested"] is False
+
+
+def test_focus_trial_can_score_own_evidence_without_classic_reuse(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT
+
+    pid = _poster(tmp_path, monkeypatch, product_bytes)
+    focus = PRODUCT_FOCUS_VARIANT
+    review_url = f"/api/posters/{pid}/versions/1/exports/{focus}/human-review"
+    info = client.get(review_url).json()
+    data = {
+        "reviewer": REVIEWER,
+        "image_sha256": info["image_sha256"],
+        "source_image_sha256": info["source_image_sha256"],
+        "spec_sha256": info["spec_sha256"],
+        "asset_sha256": info["asset_sha256"],
+        "fields": {
+            field: {"judgment": "correct", "reason": ""}
+            for field in info["fields_to_review"]
+        },
+    }
+    assert client.post(review_url, json=data).status_code == 201
+    monkeypatch.setattr("app.native_acceptance.recognize", _ocr)
+    report = client.post(
+        f"/api/posters/{pid}/versions/1/exports/{focus}/acceptance",
+        json={"ocr_mode": "paddle"},
+    )
+    assert report.status_code == 200, report.text
+
+    default_state, _ = audit_trial(REVIEWER)
+    assert default_state["can_score"] is False
+    focus_state, rows = audit_trial(REVIEWER, variant=focus)
+    assert focus_state["variant_id"] == focus
+    assert rows[0]["status"] == "READY"
+    assert focus_state["can_score"] is True
+    assert focus_state["ocr_runtime_attested"] is False
+
+    destination = tmp_path / "focus-trial"
+    result = run_trial(
+        REVIEWER, destination, score=True, variant=focus
+    )
+    assert result["variant_id"] == focus
+    assert result["poster_versions"] == 1
+    assert result["ocr_engine_execution"] == "saved_report_only"
+    readiness = json.loads(
+        (destination / "native_trial_readiness.json").read_text()
+    )
+    assert readiness["variant_id"] == focus
+    assert readiness["latest_score_status"] == "SCORED"
+    assert (destination / "native_real_cases.csv").is_file()
+    assert (destination / "native_trial_labels.csv").is_file()
+    assert not (
+        storage.poster_dir(pid) / "versions"
+        / "v1.feed_4x5_native.acceptance.paddle.json"
+    ).exists()
+
+
+def test_focus_audit_does_not_score_if_evidence_missing(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from app.native_acceptance import PRODUCT_FOCUS_VARIANT
+
+    _poster(tmp_path, monkeypatch, product_bytes)
+    destination = tmp_path / "focus-missing"
+    with pytest.raises(ValueError, match="未完成"):
+        run_trial(
+            REVIEWER, destination, score=True,
+            variant=PRODUCT_FOCUS_VARIANT,
+        )
+    readiness = json.loads(
+        (destination / "native_trial_readiness.json").read_text()
+    )
+    assert readiness["variant_id"] == PRODUCT_FOCUS_VARIANT
+    assert readiness["can_score"] is False
+    assert readiness["latest_score_status"] == "BLOCKED"
+    assert not (destination / "native_real_summary.json").exists()
+
+
+def test_cli_variant_selection_preserves_classic_default_and_focus_metadata(
+    tmp_path, monkeypatch, capsys,
+):
+    import sys
+    from scripts import native_trial as cli
+
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "empty-posters"))
+    focus_dir = tmp_path / "focus-cli"
+    monkeypatch.setattr(sys, "argv", [
+        "native_trial", "--reviewer", REVIEWER,
+        "--variant", "feed_4x5_native_product_focus",
+        "--output-dir", str(focus_dir),
+    ])
+    assert cli.main() == 0
+    focus = json.loads(
+        (focus_dir / "native_trial_readiness.json").read_text()
+    )
+    assert focus["variant_id"] == "feed_4x5_native_product_focus"
+    assert focus["latest_score_status"] == "AUDIT_ONLY"
+    assert focus["model_invoked"] is False
+
+    classic_dir = tmp_path / "classic-cli"
+    monkeypatch.setattr(sys, "argv", [
+        "native_trial", "--reviewer", REVIEWER,
+        "--output-dir", str(classic_dir),
+    ])
+    assert cli.main() == 0
+    classic = json.loads(
+        (classic_dir / "native_trial_readiness.json").read_text()
+    )
+    assert classic["variant_id"] == "feed_4x5_native"
+    assert not (focus_dir / "native_real_summary.json").exists()
+    assert not (classic_dir / "native_real_summary.json").exists()
