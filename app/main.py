@@ -140,19 +140,18 @@ async def enforce_local_only_network_boundary(request: Request, call_next):
             content={"detail": "Host 仅允许 localhost 或回环 IP；反向代理和 DNS 重绑定未受支持"},
         )
 
-    if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        fetch_site = request.headers.get("sec-fetch-site", "").lower()
-        if fetch_site in {"cross-site", "same-site"}:
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "已拒绝跨站写请求；请从本机 Poster Agent 页面操作"},
-            )
-        origin = request.headers.get("origin")
-        if origin and not _is_same_local_origin(origin, request, test_client=test_client):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Origin 与本机页面不一致；已拒绝跨源写请求"},
-            )
+    fetch_site = request.headers.get("sec-fetch-site", "").lower()
+    if fetch_site in {"cross-site", "same-site"}:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "已拒绝跨站请求；请从本机 Poster Agent 页面操作"},
+        )
+    origin = request.headers.get("origin")
+    if origin and not _is_same_local_origin(origin, request, test_client=test_client):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Origin 与本机页面不一致；已拒绝跨源请求"},
+        )
     return await call_next(request)
 app.include_router(brief_router)
 app.include_router(review_router)
