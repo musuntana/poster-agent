@@ -8,11 +8,16 @@ from fastapi.responses import Response
 
 from app import storage
 from app.channel_exports import PRESETS, render_variant
-from app.native_layout import WIDTH, HEIGHT, render_native_feed
+from app.native_layout import WIDTH, HEIGHT, render_native_feed, render_native_product_focus
 from app.schemas import PosterSpec
 
 router = APIRouter(prefix="/api/posters", tags=["channel-exports"])
 NATIVE_ID = "feed_4x5_native"
+NATIVE_PRODUCT_FOCUS_ID = "feed_4x5_native_product_focus"
+NATIVE_LAYOUTS = {
+    NATIVE_ID: "split",
+    NATIVE_PRODUCT_FOCUS_ID: "product_focus",
+}
 
 
 @router.get("/{poster_id}/versions/{version}/exports")
@@ -37,27 +42,40 @@ def list_channel_exports(poster_id: str, version: int):
             for key, size in PRESETS.items()
         ],
         # Native formats are separate so old clients retain their M4a contract.
-        "native_formats": [{
-            "id": NATIVE_ID, "width": WIDTH, "height": HEIGHT,
-            "mode": "native_layout", "reflows_text": True,
-            "automatically_accepted": False,
-            "url": f"/api/posters/{poster_id}/versions/{version}/exports/{NATIVE_ID}",
-        }],
+        "native_formats": [
+            {
+                "id": key, "width": WIDTH, "height": HEIGHT,
+                "mode": "native_layout", "reflows_text": True,
+                "automatically_accepted": False,
+                "layout_template": template,
+                "url": f"/api/posters/{poster_id}/versions/{version}/exports/{key}",
+            }
+            for key, template in NATIVE_LAYOUTS.items()
+        ],
     }
 
 
 @router.get("/{poster_id}/versions/{version}/exports/{preset}")
 def download_channel_export(poster_id: str, version: int, preset: str):
-    if preset not in PRESETS and preset != NATIVE_ID:
+    if preset not in PRESETS and preset not in NATIVE_LAYOUTS:
         raise HTTPException(status_code=422, detail="不支持的渠道尺寸")
     try:
         poster = storage.poster_dir(poster_id)
         source = storage.version_path(poster_id, version).read_bytes()
-        if preset == NATIVE_ID:
+        if preset in NATIVE_LAYOUTS:
             spec_bytes = (poster / "versions" / f"v{version}.json").read_bytes()
             spec = PosterSpec.model_validate_json(spec_bytes)
             product, logo, background = storage.read_assets(poster_id)
-            result_png = render_native_feed(spec, product, logo, background)
+            # Keep the established classic renderer as a direct call: M6's
+            # failure-path tests and callers monkeypatch this symbol to verify
+            # that a failed export remains UNVERIFIED instead of being counted
+            # as a generated image. Do not cache its callable in a registry.
+            if preset == NATIVE_ID:
+                result_png = render_native_feed(spec, product, logo, background)
+            else:
+                result_png = render_native_product_focus(
+                    spec, product, logo, background
+                )
             width, height = WIDTH, HEIGHT
             source_hash = hashlib.sha256(source).hexdigest()
             export_mode = "native_layout"
@@ -82,6 +100,8 @@ def download_channel_export(poster_id: str, version: int, preset: str):
         "X-Export-Size": f"{width}x{height}",
         "X-Automatically-Accepted": "false",
     }
+    if preset in NATIVE_LAYOUTS:
+        headers["X-Layout-Template"] = NATIVE_LAYOUTS[preset]
     if box is not None:
         headers["X-Content-Box"] = ",".join(str(v) for v in box)
     return Response(content=result_png, media_type="image/png", headers=headers)
