@@ -2,6 +2,7 @@
 from __future__ import annotations
 import io
 from ipaddress import ip_address
+from urllib.parse import urlsplit
 import json
 import hashlib
 import logging
@@ -59,9 +60,64 @@ def _is_loopback_peer(host: str | None) -> bool:
     return address.is_loopback
 
 
+def _is_loopback_hostname(hostname: str | None, *, test_client: bool = False) -> bool:
+    """Allow loopback IPs and localhost, but reject arbitrary Host names (DNS rebinding)."""
+    if not hostname:
+        return False
+    normalized = hostname.rstrip(".").lower()
+    if normalized == "localhost":
+        return True
+    if normalized == "testserver":
+        return test_client
+    try:
+        address = ip_address(normalized)
+    except ValueError:
+        return False
+    mapped_address = getattr(address, "ipv4_mapped", None)
+    if mapped_address is not None:
+        address = mapped_address
+    return address.is_loopback
+
+
+def _effective_port(scheme: str, port: int | None) -> int:
+    if port is not None:
+        return port
+    return 443 if scheme.lower() == "https" else 80
+
+
+def _is_same_local_origin(origin: str, request: Request, *, test_client: bool = False) -> bool:
+    """Accept browser writes only from the exact local origin serving the request."""
+    try:
+        parsed = urlsplit(origin)
+        request_url = request.url
+        origin_host = parsed.hostname
+        request_host = request_url.hostname
+        origin_port = parsed.port
+        request_port = request_url.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or parsed.username is not None
+        or parsed.password is not None
+        or not _is_loopback_hostname(origin_host, test_client=test_client)
+        or not _is_loopback_hostname(request_host, test_client=test_client)
+        or parsed.scheme.lower() != request_url.scheme.lower()
+        or origin_host.lower() != request_host.lower()
+        or _effective_port(parsed.scheme, origin_port)
+        != _effective_port(request_url.scheme, request_port)
+    ):
+        return False
+    return True
+
+
 @app.middleware("http")
 async def enforce_local_only_network_boundary(request: Request, call_next):
-    """Reject non-loopback ASGI client IPs; this is defense-in-depth, not authentication."""
+    """Reject remote peers, untrusted Host names, and cross-origin browser writes."""
     peer_host = request.client.host if request.client is not None else None
     if not _is_loopback_peer(peer_host):
         return JSONResponse(
@@ -72,6 +128,31 @@ async def enforce_local_only_network_boundary(request: Request, call_next):
                 )
             },
         )
+
+    test_client = peer_host == "testclient"
+    try:
+        request_host = request.url.hostname
+    except ValueError:
+        request_host = None
+    if not _is_loopback_hostname(request_host, test_client=test_client):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Host 仅允许 localhost 或回环 IP；反向代理和 DNS 重绑定未受支持"},
+        )
+
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        fetch_site = request.headers.get("sec-fetch-site", "").lower()
+        if fetch_site in {"cross-site", "same-site"}:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "已拒绝跨站写请求；请从本机 Poster Agent 页面操作"},
+            )
+        origin = request.headers.get("origin")
+        if origin and not _is_same_local_origin(origin, request, test_client=test_client):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Origin 与本机页面不一致；已拒绝跨源写请求"},
+            )
     return await call_next(request)
 app.include_router(brief_router)
 app.include_router(review_router)
