@@ -9,6 +9,7 @@ import argparse
 import json
 from pathlib import Path
 
+from app.native_acceptance import NATIVE_VARIANTS, VARIANT
 from evals.native_trial import run_trial
 from evals.native_batch_scope import load_batch_scope
 
@@ -21,6 +22,8 @@ def main() -> int:
                         help="M5c reviewer alias, e.g. local-operator")
     parser.add_argument("--output-dir", type=Path,
                         default=Path("data/eval_runs/m5e_native_trial"))
+    parser.add_argument("--variant", choices=NATIVE_VARIANTS, default=VARIANT,
+                        help="Independent native 4:5 template to audit/score (default classic)")
     parser.add_argument("--score", action="store_true",
                         help="Score with existing M5d evaluator (requires complete valid reports)")
     parser.add_argument("--batch-journal", type=Path,
@@ -29,7 +32,8 @@ def main() -> int:
     try:
         scope = load_batch_scope(args.batch_journal) if args.batch_journal else None
         summary = run_trial(
-            args.reviewer, args.output_dir, score=args.score, batch_scope=scope
+            args.reviewer, args.output_dir, score=args.score, batch_scope=scope,
+            variant=args.variant
         )
     except ValueError as exc:
         parser.exit(2, f"无法评分：{exc}\n缺口清单：{args.output_dir}/native_trial_manifest.csv\n")
