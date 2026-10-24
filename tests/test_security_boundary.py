@@ -5,7 +5,7 @@ from app.main import app
 
 
 def test_loopback_ipv4_peer_can_access_health():
-    client = TestClient(app, client=("127.0.0.1", 50001))
+    client = TestClient(app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50001))
 
     response = client.get("/health")
 
@@ -14,7 +14,7 @@ def test_loopback_ipv4_peer_can_access_health():
 
 
 def test_loopback_ipv6_peer_can_access_health():
-    client = TestClient(app, client=("::1", 50002))
+    client = TestClient(app, base_url="http://[::1]:8000", client=("::1", 50002))
 
     response = client.get("/health")
 
@@ -22,7 +22,7 @@ def test_loopback_ipv6_peer_can_access_health():
 
 
 def test_ipv4_mapped_loopback_peer_can_access_health():
-    client = TestClient(app, client=("::ffff:127.0.0.1", 50003))
+    client = TestClient(app, base_url="http://127.0.0.1:8000", client=("::ffff:127.0.0.1", 50003))
 
     response = client.get("/health")
 
@@ -52,3 +52,89 @@ def test_unparseable_non_test_peer_is_rejected():
     response = client.get("/health")
 
     assert response.status_code == 403
+
+
+def test_untrusted_host_is_rejected_even_from_loopback_peer():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50007),
+    )
+
+    response = client.get("/health", headers={"host": "attacker.example"})
+
+    assert response.status_code == 403
+    assert "Host" in response.json()["detail"]
+
+
+def test_cross_origin_post_is_rejected_before_route_execution():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50008),
+    )
+
+    response = client.post(
+        "/api/batches",
+        headers={
+            "Origin": "https://attacker.example",
+            "Sec-Fetch-Site": "cross-site",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "跨站写请求" in response.json()["detail"]
+
+
+def test_origin_mismatch_is_rejected_without_fetch_metadata():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50009),
+    )
+
+    response = client.post(
+        "/api/batches",
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert "Origin" in response.json()["detail"]
+
+
+def test_same_origin_browser_write_reaches_endpoint_validation():
+    client = TestClient(
+        app,
+        base_url="http://127.0.0.1:8000",
+        client=("127.0.0.1", 50010),
+    )
+
+    response = client.post(
+        "/api/batches",
+        headers={
+            "Origin": "http://127.0.0.1:8000",
+            "Sec-Fetch-Site": "same-origin",
+        },
+    )
+
+    # Missing multipart fields are rejected by FastAPI, proving the local-origin
+    # request passed the security middleware instead of being blocked.
+    assert response.status_code == 422
+
+
+def test_localhost_origin_is_accepted_for_local_browser_writes():
+    client = TestClient(
+        app,
+        base_url="http://localhost:8000",
+        client=("127.0.0.1", 50011),
+    )
+
+    response = client.post(
+        "/api/batches",
+        headers={
+            "Origin": "http://localhost:8000",
+            "Sec-Fetch-Site": "same-origin",
+        },
+    )
+
+    assert response.status_code == 422
