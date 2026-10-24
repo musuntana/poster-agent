@@ -254,51 +254,51 @@ async def create_batch(
 
 
 def _execute_batch(batch_id: str) -> None:
-    batch_dir = _batch_dir(batch_id)
-    state = _read_state(batch_dir)
-
-    def report(event: dict) -> None:
-        latest = _read_state(batch_dir)
-        if latest.get("status") not in {"RUNNING", "COMPLETED"}:
-            return
-        latest["processed"] = event.get("processed", latest.get("processed", 0))
-        latest["current_sku"] = event.get("current_sku")
-        latest["updated_at"] = _now()
-        if event.get("phase") == "COMPLETED":
-            latest["status"] = "COMPLETED"
-            latest["error"] = None
-        _write_json_atomic(batch_dir / "batch_status.json", latest)
-
     try:
-        batch = import_module("scripts.real_sku_batch")
-        result = batch.run_batch(
-            batch_dir / "manifest.csv",
-            batch_dir,
-            apply=True,
-            progress_callback=report,
-            manage_lifespan=False,
-        )
-        state = _read_state(batch_dir)
-        state.update({
-            "status": "COMPLETED",
-            "processed": result["created_or_reused"],
-            "current_sku": None,
-            "error": None,
-            "updated_at": _now(),
-        })
-        _write_json_atomic(batch_dir / "batch_status.json", state)
-    except Exception as exc:
+        batch_dir = _batch_dir(batch_id)
+        _read_state(batch_dir)
+
+        def report(event: dict) -> None:
+            latest = _read_state(batch_dir)
+            if latest.get("status") not in {"RUNNING", "COMPLETED"}:
+                return
+            latest["processed"] = event.get("processed", latest.get("processed", 0))
+            latest["current_sku"] = event.get("current_sku")
+            latest["updated_at"] = _now()
+            if event.get("phase") == "COMPLETED":
+                latest["status"] = "COMPLETED"
+                latest["error"] = None
+            _write_json_atomic(batch_dir / "batch_status.json", latest)
+
         try:
+            batch = import_module("scripts.real_sku_batch")
+            result = batch.run_batch(
+                batch_dir / "manifest.csv",
+                batch_dir,
+                apply=True,
+                progress_callback=report,
+                manage_lifespan=False,
+            )
             state = _read_state(batch_dir)
             state.update({
-                "status": "FAILED",
-                "current_sku": state.get("current_sku"),
-                "error": str(exc).replace(str(batch_dir), "[batch]")[:500],
+                "status": "COMPLETED",
+                "processed": result["created_or_reused"],
+                "current_sku": None,
+                "error": None,
                 "updated_at": _now(),
             })
             _write_json_atomic(batch_dir / "batch_status.json", state)
-        except Exception:
-            pass
+        except Exception as exc:
+            try:
+                state = _read_state(batch_dir)
+                state.update({
+                    "status": "FAILED",
+                    "error": str(exc).replace(str(batch_dir), "[batch]")[:500],
+                    "updated_at": _now(),
+                })
+                _write_json_atomic(batch_dir / "batch_status.json", state)
+            except Exception:
+                pass
     finally:
         with _ACTIVE_LOCK:
             _ACTIVE_BATCHES.discard(batch_id)
@@ -320,7 +320,6 @@ def apply_batch(batch_id: str, background_tasks: BackgroundTasks):
             state["error"] = "执行进程已不在当前服务中；续跑前会复用已有 SKU 账本"
         if state.get("status") not in {"READY", "FAILED", "INTERRUPTED"}:
             raise HTTPException(status_code=409, detail="当前批次状态不允许启动")
-        _ACTIVE_BATCHES.add(batch_id)
         state.update({
             "status": "RUNNING",
             "processed": state.get("processed", 0),
@@ -329,6 +328,7 @@ def apply_batch(batch_id: str, background_tasks: BackgroundTasks):
             "updated_at": _now(),
         })
         _write_json_atomic(batch_dir / "batch_status.json", state)
+        _ACTIVE_BATCHES.add(batch_id)
     background_tasks.add_task(_execute_batch, batch_id)
     return _public_state(batch_dir, state)
 

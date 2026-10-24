@@ -1126,6 +1126,7 @@ const BATCH_STORAGE_KEY='poster-agent-active-batch';
 let currentBatchId=null;
 let batchPollTimer=null;
 let batchPollGeneration=0;
+let lastBatchStatus=null;
 function batchStatusLabel(status){
   return ({READY:'已预检，等待开始',RUNNING:'正在生成',COMPLETED:'批次已完成',FAILED:'批次中断，可安全续跑',INTERRUPTED:'服务中断，可安全续跑',UNKNOWN:'状态未知',PENDING:'待处理'})[status]||status;
 }
@@ -1133,6 +1134,7 @@ function resetBatchForNewFiles(){
   if(batchPollTimer){clearTimeout(batchPollTimer);batchPollTimer=null;}
   batchPollGeneration+=1;
   currentBatchId=null;
+  lastBatchStatus=null;
   localStorage.removeItem(BATCH_STORAGE_KEY);
   $('applyBatch').disabled=true;
   $('batchProgress').value=0;
@@ -1143,6 +1145,9 @@ function resetBatchForNewFiles(){
 function renderBatchState(state){
   if(!state || state.batch_id!==currentBatchId)return;
   localStorage.setItem(BATCH_STORAGE_KEY,state.batch_id);
+  lastBatchStatus=state.status;
+  $('batchManifest').disabled=state.status==='RUNNING';
+  $('batchImages').disabled=state.status==='RUNNING';
   const total=Number(state.total)||0;
   const processed=Math.min(total,Number(state.processed)||0);
   $('batchProgress').value=total?Math.round(processed*100/total):0;
@@ -1197,7 +1202,7 @@ async function refreshBatchState(batchId){
     if(currentBatchId===batchId){
       $('batchStatus').textContent='读取批次状态失败：'+err.message;
       $('batchStatus').className='tip bad';
-      scheduleBatchPoll(batchId);
+      if(lastBatchStatus==='RUNNING')scheduleBatchPoll(batchId);
     }
   }
 }
@@ -1216,6 +1221,8 @@ $('preflightBatch').addEventListener('click',async()=>{
   for(const file of images)body.append('images',file,file.name);
   $('preflightBatch').disabled=true;
   $('applyBatch').disabled=true;
+  $('batchManifest').disabled=true;
+  $('batchImages').disabled=true;
   $('batchStatus').textContent='正在上传到本机并校验全部 SKU；此步骤不会创建海报…';
   $('batchStatus').className='tip';
   try{
@@ -1229,6 +1236,8 @@ $('preflightBatch').addEventListener('click',async()=>{
     $('batchStatus').className='tip bad';
   }finally{
     $('preflightBatch').disabled=false;
+    $('batchManifest').disabled=false;
+    $('batchImages').disabled=false;
   }
 });
 $('applyBatch').addEventListener('click',async()=>{
