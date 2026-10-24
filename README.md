@@ -50,7 +50,7 @@ uv run --locked python -m app.run_local --reload --port 8000
 
 **M5h 新增本地验收队列：** 在网页右侧点击「刷新本地验收队列」，即可按 M5e 状态查看每张海报最新版本，点击「打开审核」直接使用既有 4:5 预览、M5c 人工审核和 M4c 单独验收。刷新仅读取本地数据，既不运行 OCR，也不自动放行。详见 [M5h 审核队列说明](docs/m5h-local-review-queue.md)。
 
-**M5g 新增真实商品批量导入：** CSV 列出 1–100 个本地商品图，默认完整预检，显式 `--apply` 才使用原有 FastAPI 安全上传、PosterSpec 和 SQLite 幂等账本生成海报。固定本地免费背景，支持中断后继续，保留原商品图哈希及 SKU→海报 ID 关系；不执行 OCR，不虚构真实商品评测成绩。参见 [M5g 本地批量导入](docs/m5g-local-batch-import.md)。
+**M5g 新增本地商品批量导入：** CLI 与网页均支持 1–100 个 SKU 的全批预检、显式应用、逐 SKU 进度、幂等续跑与 `batch_import_results.json` 证据账本。网页通过本机 API 上传 CSV 与图片，强制本地免费背景，默认不创建海报；不执行 OCR，不虚构真实商品评测成绩。参见 [M5g 本地批量导入](docs/m5g-local-batch-import.md)。
 
 **M5f 已加固试验证据：** 原生 OCR 报告记录运行适配器、PaddleOCR/PaddlePaddle 包版本及架构（**仅诊断，不可当作真实模型执行证明**）；每次盘点或评分会把旧指标归档到 `history/`，通过 `latest_score_status` 避免旧 F1 被当成最新结果。参见 [M5f 试验防混淆说明](docs/m5f-evidence-run-safety.md)。
 

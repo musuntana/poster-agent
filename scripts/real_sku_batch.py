@@ -14,7 +14,9 @@ import io
 import json
 import os
 import re
+import uuid
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
@@ -67,7 +69,12 @@ def _validated_image(path: Path) -> str:
 
 
 def preflight(csv_path: Path) -> tuple[str, list[dict]]:
+    csv_path = Path(csv_path)
+    if csv_path.is_symlink():
+        raise BatchError("CSV 清单不能是符号链接")
     csv_path = csv_path.resolve(strict=True)
+    if not csv_path.is_file():
+        raise BatchError("CSV 清单必须是普通文件")
     base = csv_path.parent
     raw_csv = csv_path.read_bytes()
     with csv_path.open(encoding="utf-8-sig", newline="") as handle:
@@ -134,7 +141,7 @@ def preflight(csv_path: Path) -> tuple[str, list[dict]]:
 
 def _write_json_atomic(destination: Path, value: dict) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    staging = destination.with_suffix(destination.suffix + ".tmp")
+    staging = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
     staging.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
                        encoding="utf-8")
     os.replace(staging, destination)
@@ -152,11 +159,20 @@ def _file_parts(item: dict) -> dict:
     return parts
 
 
-def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
+def run_batch(
+    manifest: Path,
+    output_dir: Path,
+    *,
+    apply: bool = False,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    manage_lifespan: bool = True,
+) -> dict:
     manifest_sha, prepared = preflight(manifest)
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "batch_import_results.json"
+    if output.is_symlink():
+        raise BatchError("批次账本不能是符号链接")
     expected_sku_ids = [item["sku_id"] for item in prepared]
     if apply and output.exists():
         state = json.loads(output.read_text(encoding="utf-8"))
@@ -172,8 +188,8 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
         if "expected_sku_ids" in state and state["expected_sku_ids"] != expected_sku_ids:
             raise BatchError("现有批次账本的预期 SKU 与当前 CSV 不一致")
         if "expected_sku_count" in state and (
-            type(state["expected_sku_count"]) is not int or
-            state["expected_sku_count"] != len(expected_sku_ids)
+            type(state["expected_sku_count"]) is not int
+            or state["expected_sku_count"] != len(expected_sku_ids)
         ):
             raise BatchError("现有批次账本的预期 SKU 数量不一致")
     else:
@@ -200,11 +216,23 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
         _write_json_atomic(output_dir / "batch_preflight.json", plan)
         return plan
 
-    # The existing local-only FastAPI route, rather than an alternate
-    # uploader, owns the payment mode, image checks and storage semantics.
-    with TestClient(app) as client:
+    def report(phase: str, item: dict, poster_id: str | None = None) -> None:
+        if progress_callback is not None:
+            progress_callback({
+                "phase": phase,
+                "processed": len(state["rows"]),
+                "total": len(prepared),
+                "current_sku": item["sku_id"] if phase != "COMPLETED" else None,
+                "poster_id": poster_id,
+            })
+
+    # The existing local-only FastAPI route owns upload validation, storage,
+    # and idempotency. Web batches avoid re-running app startup recovery inside
+    # an already-running server; the CLI keeps its historical lifespan behavior.
+    def apply_rows(client: TestClient) -> None:
         for item in prepared:
             sku = item["sku_id"]
+            report("STARTED", item)
             old = state["rows"].get(sku)
             if old is not None:
                 if old.get("request_sha256") != item["request_sha256"]:
@@ -213,6 +241,7 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
                     storage.version_path(old["poster_id"], 1)
                 except (KeyError, FileNotFoundError) as exc:
                     raise BatchError(f"{sku}：导入账本指向不存在的海报，需人工对账") from exc
+                report("ROW_COMPLETED", item, old["poster_id"])
                 continue
 
             files = _file_parts(item)
@@ -241,15 +270,39 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
                 "idempotency_key": item["idempotency_key"],
             }
             # Commit success after every SKU. If the process dies between API
-            # response and this write, the existing execution ledger recovers
-            # the same response on resume without another poster render.
+            # response and this write, the execution ledger recovers the same
+            # response on resume without another poster render.
             _write_json_atomic(output, state)
+            report("ROW_COMPLETED", item, poster_id)
+
+    if manage_lifespan:
+        with TestClient(app) as client:
+            apply_rows(client)
+    else:
+        client = TestClient(app)
+        try:
+            apply_rows(client)
+        finally:
+            client.close()
+
     if set(state["rows"]) != set(expected_sku_ids):
         raise BatchError("导入未覆盖全部预期 SKU，拒绝标记为完成")
     state["completed"] = True
     _write_json_atomic(output, state)
-    return {**plan, "created_or_reused": len(state["rows"]),
-            "poster_ids": {sku: row["poster_id"] for sku, row in state["rows"].items()}}
+    result = {
+        **plan,
+        "created_or_reused": len(state["rows"]),
+        "poster_ids": {sku: row["poster_id"] for sku, row in state["rows"].items()},
+    }
+    if progress_callback is not None:
+        progress_callback({
+            "phase": "COMPLETED",
+            "processed": len(state["rows"]),
+            "total": len(prepared),
+            "current_sku": None,
+            "poster_id": None,
+        })
+    return result
 
 
 def main() -> int:
