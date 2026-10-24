@@ -58,7 +58,7 @@ jobs:
       - name: Install pinned project Python
         run: uv python install 3.12
       - name: Install Chinese fonts
-        timeout-minutes: 4
+        timeout-minutes: 8
         run: |
           if fc-list :lang=zh 2>/dev/null | grep -q .; then
             echo "CJK fonts are already available on this runner."
