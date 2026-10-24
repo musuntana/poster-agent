@@ -249,6 +249,7 @@ def _archive_previous_scores(output_dir: Path) -> str | None:
 
 def _verify_output_identity(
     output_dir: Path, reviewer: str, variant: NativeVariant,
+    batch_scope: dict | None = None,
 ) -> None:
     """Reject evaluation directory reuse across identities before any mutation.
 
@@ -274,6 +275,28 @@ def _verify_output_identity(
             raise ValueError("评测目录已绑定其他版式；请为每种版式使用独立目录")
         if prior["reviewer"] != reviewer:
             raise ValueError("评测目录已绑定其他审核员；请为每位审核员使用独立目录")
+
+        # A local M5g journal identifies an exact, completed SKU cohort.
+        # Combining two journals (or mixing global vs scoped audits) under one
+        # output directory can silently archive or overwrite another cohort.
+        previous_mode = prior.get("scope_mode")
+        requested_mode = batch_scope["scope_mode"] if batch_scope is not None else None
+        if previous_mode != requested_mode:
+            raise ValueError("评测目录已绑定不同批次范围；请使用独立目录")
+        if previous_mode is not None:
+            if previous_mode != "batch_latest_per_sku":
+                raise ValueError("评测目录批次来源不明；请使用独立目录")
+            for name in ("source_batch_journal_sha256", "source_manifest_sha256"):
+                previous_digest = prior.get(name)
+                requested_digest = batch_scope[name]
+                if (not isinstance(previous_digest, str)
+                        or not re.fullmatch(r"[a-f0-9]{64}", previous_digest)
+                        or previous_digest != requested_digest):
+                    raise ValueError("评测目录已绑定其他批次或摘要无效；请使用独立目录")
+        elif any(name in prior for name in (
+            "source_batch_journal_sha256", "source_manifest_sha256"
+        )):
+            raise ValueError("评测目录批次来源不明；请使用独立目录")
         return
     # Do not infer a blank identity if existing evidence is present but its
     # readiness pointer is missing (e.g. a partially copied experiment).
@@ -295,7 +318,7 @@ def run_trial(
     """
     summary, rows = audit_trial(reviewer, batch_scope=batch_scope, variant=variant)
     # Guard the directory BEFORE mkdir, archiving scores or saving audit files.
-    _verify_output_identity(output_dir, reviewer, variant)
+    _verify_output_identity(output_dir, reviewer, variant, batch_scope=batch_scope)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["trial_run_id"] = uuid4().hex
     summary["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat()
