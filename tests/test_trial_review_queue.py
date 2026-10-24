@@ -233,12 +233,12 @@ def test_variant_aware_queue_rejects_unknown_variants_and_wires_editor():
     assert 'id="reviewQueueVariant"' in html
     assert 'value="feed_4x5_native_product_focus"' in html
     assert "variant='+encodeURIComponent(variant)" in html
-    assert "证据齐备（当前评分器不支持）" in html
+    assert "证据齐备（可按此版式单独评分，非投放批准）" in html
     assert "$('channelPreset').value=data.variant_id;display(poster)" in html
 
 
 
-def test_focus_ready_queue_does_not_enable_classic_only_scoring(
+def test_focus_ready_queue_supports_independent_scoring(
     tmp_path, monkeypatch, product_bytes,
 ):
     from evals.native_trial import audit_trial
@@ -279,6 +279,6 @@ def test_focus_ready_queue_does_not_enable_classic_only_scoring(
     summary, rows = audit_trial(REVIEWER, variant=focus_id)
     assert len(rows) == 1
     assert rows[0]["status"] == "READY"
-    assert "评分器尚不支持" in rows[0]["action"]
+    assert "对应版式离线评分" in rows[0]["action"]
     assert summary["variant_id"] == focus_id
-    assert summary["can_score"] is False
+    assert summary["can_score"] is True
