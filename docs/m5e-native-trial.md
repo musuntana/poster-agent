@@ -84,7 +84,7 @@ uv run --locked python -m scripts.native_trial \
   --score
 ```
 
-两种模板要使用**不同的 output-dir**，避免同一目录后续试验归档影响直观比较。评分内部严格校验导出 CSV 的 `variant_id`、指定版式的 PNG 和人工标注 SHA-256、该版式单独保存的 OCR 报告以及字段/价格区定位检查；不允许将经典分栏版的标签或报告冒用为商品主体优先版。两种输出的 `native_real_summary.json` 和逐项 `native_real_cases.csv` 都包含所选 `variant_id`，统计不能混在一起。
+两种模板要使用**不同的 output-dir**。系统现在会把已有评测目录绑定到指定的版式和审核员；任何另一版式或另一审核员重复使用此目录都会在归档/覆盖之前报错，且不修改旧指标、标签和清单。已有文件但缺少合法 `native_trial_readiness.json` 的目录也会拒绝接管，请选新的目录并人工核查旧证据。评分内部严格校验导出 CSV 的 `variant_id`、指定版式的 PNG 和人工标注 SHA-256、该版式单独保存的 OCR 报告以及字段/价格区定位检查；不允许将经典分栏版的标签或报告冒用为商品主体优先版。两种输出的 `native_real_summary.json` 和逐项 `native_real_cases.csv` 都包含所选 `variant_id`，统计不能混在一起。
 
 `READY` 只是**在指定版式下满足离线评分的证据条件**，不是对商品图质量、PaddleOCR 运行真实性或广告可投放性的确认。CI 使用模拟 OCR，仅验证数据边界。M6 的 20 个真实授权 SKU、实际 PaddleOCR 运行和人工视觉审核依然需要单独完成。
 

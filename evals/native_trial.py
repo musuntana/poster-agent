@@ -247,6 +247,43 @@ def _archive_previous_scores(output_dir: Path) -> str | None:
     return f"history/{name}"
 
 
+def _verify_output_identity(
+    output_dir: Path, reviewer: str, variant: NativeVariant,
+) -> None:
+    """Reject evaluation directory reuse across identities before any mutation.
+
+    Each run updates the latest audit and archives prior scores. Reusing the
+    same directory for a different variant/reviewer would silently move or
+    replace another independent cohort's *current* evidence.
+    """
+    current = output_dir / "native_trial_readiness.json"
+    if current.is_symlink():
+        raise ValueError("评测目录元数据不可信；请使用独立目录")
+    if current.is_file():
+        try:
+            prior = json.loads(current.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise ValueError("评测目录元数据无法读取；请使用独立目录") from exc
+        if not isinstance(prior, dict) or prior.get("schema_version") != "1.0":
+            raise ValueError("评测目录元数据缺失身份信息；请使用独立目录")
+        if prior.get("variant_id") not in NATIVE_VARIANTS or not isinstance(
+            prior.get("reviewer"), str
+        ):
+            raise ValueError("评测目录元数据缺失身份信息；请使用独立目录")
+        if prior["variant_id"] != variant:
+            raise ValueError("评测目录已绑定其他版式；请为每种版式使用独立目录")
+        if prior["reviewer"] != reviewer:
+            raise ValueError("评测目录已绑定其他审核员；请为每位审核员使用独立目录")
+        return
+    # Do not infer a blank identity if existing evidence is present but its
+    # readiness pointer is missing (e.g. a partially copied experiment).
+    artifacts = (
+        "native_trial_manifest.csv", *SCORE_FILES, "history",
+    )
+    if current.exists() or any((output_dir / name).exists() for name in artifacts):
+        raise ValueError("评测目录存在来源不明的旧结果；请使用独立目录")
+
+
 def run_trial(
     reviewer: str, output_dir: Path, *, score: bool = False,
     batch_scope: dict | None = None, variant: NativeVariant = VARIANT,
@@ -257,6 +294,8 @@ def run_trial(
     at the root after a newer audit discovers missing or stale evidence.
     """
     summary, rows = audit_trial(reviewer, batch_scope=batch_scope, variant=variant)
+    # Guard the directory BEFORE mkdir, archiving scores or saving audit files.
+    _verify_output_identity(output_dir, reviewer, variant)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary["trial_run_id"] = uuid4().hex
     summary["evaluated_at_utc"] = datetime.now(timezone.utc).isoformat()
