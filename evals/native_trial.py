@@ -126,7 +126,10 @@ def audit_trial(
                                         row["action"] = "OCR 字段或价格区域检查不完整，重新验收"
                                     else:
                                         row["status"] = "READY"
-                                        row["action"] = "可以参与原生 4:5 离线评测"
+                                        row["action"] = (
+                                            "可以参与原生 4:5 离线评测" if variant == VARIANT
+                                            else "本版式证据齐备，经典分栏评分器尚不支持此版式"
+                                        )
                                         identifier = (poster.name, version)
                                         if report.get("ocr_runtime_evidence") == "RECORDED" and isinstance(
                                             report.get("ocr_runtime"), dict
