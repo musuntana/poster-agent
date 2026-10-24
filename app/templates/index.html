@@ -85,6 +85,15 @@
 <p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
 </section>
 <section class="panel">
+<section id="batchProgress" style="margin-bottom:24px">
+<h2>本地批量导入进度（M5g）</h2>
+<p class="tip">只读取默认批次账本，不会创建海报、调用模型或运行 OCR。先通过命令行完成预检；需要生成时仍须显式使用 --apply。</p>
+<div class="actions">
+<button id="refreshBatchStatus" class="secondary" type="button">刷新批次进度</button>
+<span id="batchProgressSummary" class="tip" aria-live="polite">尚未读取</span>
+</div>
+<div id="batchProgressItems" class="execution-history" aria-live="polite"></div>
+</section>
 <section id="trialQueue" style="margin-bottom:24px">
 <h2>本地 4:5 验收队列</h2>
 <p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
@@ -473,6 +482,37 @@ async function refreshExecutionHistory(){
 }
 $('checkExecution').addEventListener('click',()=>{refreshExecutionStatus();refreshExecutionHistory();});
 $('refreshExecutionHistory').addEventListener('click',refreshExecutionHistory);
+
+async function refreshBatchImportStatus(){
+  const summary=$('batchProgressSummary');
+  const host=$('batchProgressItems');
+  summary.textContent='正在读取本地账本…';
+  host.replaceChildren();
+  try{
+    const response=await fetch('/api/batches/status');
+    const obj=await response.json();
+    if(!response.ok)throw Error(errorText(obj));
+    if(!obj.available){
+      summary.textContent=obj.message;
+      return;
+    }
+    summary.textContent=(obj.completed?'批次已完成':'批次未完成')+' · '+obj.completed_sku_count+'/'+obj.expected_sku_count+' 个 SKU 完成，待处理 '+obj.pending_sku_count;
+    for(const item of obj.rows){
+      const row=document.createElement('div');
+      row.className='execution-row';
+      const label=document.createElement('span');
+      label.className='summary';
+      label.textContent=item.sku_id+' · '+(item.status==='COMPLETED'?'已导入':'待处理');
+      row.appendChild(label);
+      host.appendChild(row);
+    }
+  }catch(err){
+    summary.textContent='读取批次进度失败：'+err.message;
+  }
+}
+$('refreshBatchStatus').addEventListener('click',refreshBatchImportStatus);
+refreshBatchImportStatus();
+
 $('executionHistoryFilter').addEventListener('change',()=>{
   executionHistoryPaging.offset=0;
   refreshExecutionHistory();

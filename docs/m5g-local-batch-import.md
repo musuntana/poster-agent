@@ -91,3 +91,15 @@ uv run --locked python -m pytest -q tests/test_real_sku_batch.py
 ```
 
 CI 的样本来自 Pillow 人工构造的本地小图片，实际执行了 Web 创建、原有 PNG 存储和幂等账本测试，但**没有真实商业商品素材、真实 PaddleOCR 模型或 Qwen 付费调用**。
+
+
+## Local UI batch progress
+
+The workbench's **本地批量导入进度（M5g）** panel reads the default
+`data/eval_runs/m5g_import/batch_import_results.json` journal through
+`GET /api/batches/status`. It shows expected, completed, and pending SKU
+counts without exposing filesystem paths, request hashes, or full poster data.
+It is strictly read-only: it does not import images, generate posters, call a
+paid model, run OCR, or mark the cohort accepted. The CLI remains the supported
+path to preflight and explicitly apply a batch. Custom output directories are
+not shown in this panel.

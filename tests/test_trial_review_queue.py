@@ -159,3 +159,63 @@ def test_invalid_reviewer_rejected_and_html_controls_use_safe_text_content(
     assert "hint.textContent=" in html
     assert "display(poster)" in html
     assert "item.version" in html
+
+def test_batch_status_reports_incomplete_and_completed_without_running_work(tmp_path, monkeypatch):
+    import json
+    from app import batch_status_routes
+
+    journal = tmp_path / "batch_import_results.json"
+    monkeypatch.setattr(batch_status_routes, "JOURNAL_PATH", journal)
+    missing = client.get("/api/batches/status")
+    assert missing.status_code == 200
+    assert missing.json()["available"] is False
+
+    journal.write_text(json.dumps({
+        "schema_version": "m5g-1", "mode": "apply", "completed": False,
+        "manifest_sha256": "a" * 64,
+        "expected_sku_ids": ["sku-one", "sku-two"], "expected_sku_count": 2,
+        "rows": {"sku-one": {"poster_id": "b" * 32, "version": 1}},
+    }), encoding="utf-8")
+    partial = client.get("/api/batches/status")
+    assert partial.status_code == 200
+    assert partial.json()["completed"] is False
+    assert partial.json()["completed_sku_count"] == 1
+    assert partial.json()["pending_sku_count"] == 1
+    assert partial.json()["rows"] == [
+        {"sku_id": "sku-one", "status": "COMPLETED"},
+        {"sku_id": "sku-two", "status": "PENDING"},
+    ]
+
+    state = json.loads(journal.read_text(encoding="utf-8"))
+    state["rows"]["sku-two"] = {"poster_id": "c" * 32, "version": 1}
+    state["completed"] = True
+    journal.write_text(json.dumps(state), encoding="utf-8")
+    complete = client.get("/api/batches/status")
+    assert complete.status_code == 200
+    assert complete.json()["completed"] is True
+    assert complete.json()["completed_sku_count"] == 2
+
+
+def test_batch_status_rejects_forged_or_malformed_journal(tmp_path, monkeypatch):
+    import json
+    from app import batch_status_routes
+
+    journal = tmp_path / "batch_import_results.json"
+    monkeypatch.setattr(batch_status_routes, "JOURNAL_PATH", journal)
+    journal.write_text("{broken", encoding="utf-8")
+    assert client.get("/api/batches/status").status_code == 422
+    journal.write_text(json.dumps({
+        "schema_version": "m5g-1", "mode": "apply", "completed": True,
+        "expected_sku_ids": ["sku-one"], "expected_sku_count": 1,
+        "rows": {"foreign-sku": {"poster_id": "b" * 32, "version": 1}},
+    }), encoding="utf-8")
+    assert client.get("/api/batches/status").status_code == 422
+
+
+def test_batch_progress_panel_is_read_only_and_exposes_status_controls():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="refreshBatchStatus"' in response.text
+    assert 'id="batchProgress"' in response.text
+    assert "/api/batches/status" in response.text
+
