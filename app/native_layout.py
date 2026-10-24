@@ -119,3 +119,128 @@ def render_native_feed(
     output = io.BytesIO()
     canvas.convert("RGB").save(output, format="PNG", optimize=True)
     return output.getvalue()
+
+
+def _wide_title_lines(
+    draw: ImageDraw.ImageDraw, text: str, width: int = 920,
+    max_lines: int = 2, max_size: int = 58, min_size: int = 34,
+):
+    """Fit a title into the wide lower-panel region without clipping."""
+    for size in range(max_size, min_size - 1, -2):
+        font = get_font(size)
+        lines: list[str] = []
+        part = ""
+        for character in text:
+            candidate = part + character
+            if part and draw.textbbox((0, 0), candidate, font=font)[2] > width:
+                lines.append(part)
+                part = character
+            else:
+                part = candidate
+        if part:
+            lines.append(part)
+        line_step = size + 10
+        if len(lines) <= max_lines and len(lines) * line_step <= 132:
+            return font, lines, line_step
+    raise ValueError("标题超出商品主体优先版式的可用空间，请缩短标题")
+
+
+def render_native_product_focus(
+    spec: PosterSpec, product: Image.Image, logo: Image.Image | None,
+    background: Image.Image,
+) -> bytes:
+    """Alternative native 4:5 composition: product hero above a separate offer panel.
+
+    This renderer is deterministic and offline. It intentionally has a distinct
+    layout ID so quality labels for the split layout cannot be reused.
+    """
+    canvas = _cover(background, (WIDTH, HEIGHT)).convert("RGBA")
+    panel = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
+    deco = ImageDraw.Draw(panel, "RGBA")
+    deco.rounded_rectangle(
+        (32, 748, 1048, 1318), radius=38, fill=(6, 20, 42, 232)
+    )
+    canvas = Image.alpha_composite(canvas, panel)
+
+    # Preserve the complete SKU and its colors; never segment or redraw it.
+    left, top, right, bottom = 110, 142, 970, 730
+    subject = _contain(product, (right - left - 28, bottom - top - 28))
+    if subject.getextrema()[3][0] == 255:
+        card = Image.new(
+            "RGBA", (right - left, bottom - top), (255, 255, 255, 246)
+        )
+        mask = Image.new("L", card.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, card.width - 1, card.height - 1), radius=30, fill=255
+        )
+        card.putalpha(mask)
+        canvas.alpha_composite(card, (left, top))
+    sx = left + ((right - left) - subject.width) // 2
+    sy = top + ((bottom - top) - subject.height) // 2
+    canvas.alpha_composite(subject, (sx, sy))
+
+    if logo is not None:
+        mark = _contain(logo, (250, 84))
+        canvas.alpha_composite(mark, (68, 38))
+
+    draw = ImageDraw.Draw(canvas)
+    title_font, lines, line_step = _wide_title_lines(draw, spec.title)
+    title_top = 786
+    for index, line in enumerate(lines):
+        draw.text(
+            (68, title_top + index * line_step), line,
+            font=title_font, fill="#FFFFFF",
+        )
+
+    subtitle_y = title_top + len(lines) * line_step + 8
+    if spec.subtitle:
+        subtitle_font = _fit_text(
+            draw, spec.subtitle, 920, max_size=29, min_size=18
+        )
+        subtitle_box = draw.textbbox((0, 0), spec.subtitle, font=subtitle_font)
+        if subtitle_box[2] > 920 or subtitle_y + (subtitle_box[3] - subtitle_box[1]) > 974:
+            raise ValueError("副标题超出商品主体优先版式的可用空间，请缩短副标题")
+        draw.text(
+            (68, subtitle_y), spec.subtitle, font=subtitle_font, fill="#C7E2FC"
+        )
+
+    draw.text((68, 974), "限时到手价", font=get_font(28), fill="#CBE6FF")
+    sale = "¥" + price_text(spec.price)
+    sale_font = _fit_text(draw, sale, 520, max_size=82, min_size=34)
+    sale_box = draw.textbbox((0, 0), sale, font=sale_font)
+    if sale_box[2] > 520:
+        raise ValueError("价格过长，无法安全排版")
+    draw.text(
+        (65, 1010), sale, font=sale_font,
+        fill="#FFE79B", stroke_width=1, stroke_fill="#B9873B",
+    )
+
+    if spec.original_price is not None:
+        original = "原价 ¥" + price_text(spec.original_price)
+        original_font = _fit_text(draw, original, 480, max_size=27, min_size=18)
+        original_box = draw.textbbox((0, 0), original, font=original_font)
+        if original_box[2] > 480:
+            raise ValueError("原价过长，无法安全排版")
+        draw.text(
+            (68, 1134), original, font=original_font, fill="#BFD7EE"
+        )
+
+    button = (640, 1114, 1012, 1210)
+    draw.rounded_rectangle(button, radius=34, fill="#F5C85C")
+    cta_font = _fit_text(
+        draw, spec.cta, button[2] - button[0] - 34,
+        max_size=38, min_size=20,
+    )
+    cta_box = draw.textbbox((0, 0), spec.cta, font=cta_font)
+    cta_width = cta_box[2] - cta_box[0]
+    if cta_width > button[2] - button[0] - 34:
+        raise ValueError("CTA 文案过长，无法放入按钮")
+    center = (button[0] + button[2]) / 2
+    draw.text(
+        (center - cta_width / 2, 1138), spec.cta,
+        font=cta_font, fill="#203653",
+    )
+
+    output = io.BytesIO()
+    canvas.convert("RGB").save(output, format="PNG", optimize=True)
+    return output.getvalue()

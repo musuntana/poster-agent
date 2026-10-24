@@ -153,3 +153,70 @@ def test_native_layout_rejects_overflowing_subtitle():
 
     with pytest.raises(ValueError, match="副标题"):
         render_native_feed(spec, product, None, background)
+
+
+def test_product_focus_layout_is_deterministic_and_distinct():
+    from app.native_layout import render_native_product_focus
+
+    product = Image.new("RGBA", (420, 620), (240, 100, 40, 255))
+    logo = Image.new("RGBA", (200, 80), (12, 230, 95, 255))
+    background = Image.new("RGB", (1024, 1024), (35, 57, 87))
+    spec = PosterSpec(title="高效清洁电动牙刷双十一优惠", subtitle="全新升级 · 长效续航",
+                      price="199", original_price="399", cta="立即抢购")
+    first = render_native_product_focus(spec, product, logo, background)
+    assert render_native_product_focus(spec, product, logo, background) == first
+    with Image.open(io.BytesIO(first)) as image:
+        assert image.format == "PNG"
+        assert image.size == (1080, 1350)
+        assert image.mode == "RGB"
+    classic = render_native_feed(spec, product, logo, background)
+    assert first != classic
+    changed = render_native_product_focus(
+        spec.model_copy(update={"price": spec.price + 1}), product, logo, background
+    )
+    assert changed != first
+
+
+def test_product_focus_export_is_listed_and_does_not_mutate_source(
+    tmp_path, monkeypatch, product_bytes
+):
+    pid = _make(tmp_path, monkeypatch, product_bytes)
+    source = storage.version_path(pid, 1).read_bytes()
+    source_spec = (storage.poster_dir(pid) / "versions" / "v1.json").read_bytes()
+    metadata = (storage.poster_dir(pid) / "meta.json").read_bytes()
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("layout export must not call paid model")
+
+    monkeypatch.setattr("app.main.generate_ai_background", forbidden)
+    listing = client.get(f"/api/posters/{pid}/versions/1/exports").json()
+    native = {item["id"]: item for item in listing["native_formats"]}
+    assert set(native) == {"feed_4x5_native", "feed_4x5_native_product_focus"}
+    product_focus = native["feed_4x5_native_product_focus"]
+    assert product_focus["mode"] == "native_layout"
+    assert product_focus["reflows_text"] is True
+    assert product_focus["automatically_accepted"] is False
+
+    url = product_focus["url"]
+    first = client.get(url)
+    second = client.get(url)
+    assert first.status_code == 200, first.text
+    assert first.content == second.content
+    assert first.headers["x-export-mode"] == "native_layout"
+    assert first.headers["x-layout-template"] == "product_focus"
+    assert first.headers["x-automatically-accepted"] == "false"
+    assert first.headers["x-export-size"] == "1080x1350"
+    with Image.open(io.BytesIO(first.content)) as image:
+        assert image.size == (1080, 1350)
+
+    assert storage.version_path(pid, 1).read_bytes() == source
+    assert (storage.poster_dir(pid) / "versions" / "v1.json").read_bytes() == source_spec
+    assert (storage.poster_dir(pid) / "meta.json").read_bytes() == metadata
+    assert client.get(f"/api/posters/{pid}/versions/1/exports/unknown_native").status_code == 422
+
+
+def test_ui_labels_product_focus_as_a_separate_unverified_layout():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'value="feed_4x5_native_product_focus"' in response.text
+    assert "此版式尚未接入当前 OCR / 人工验收流程" in response.text

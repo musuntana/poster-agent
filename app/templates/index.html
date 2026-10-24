@@ -120,7 +120,8 @@
 <p class="tip">4:5 可以选择从原商品、Logo、背景和当前规格重新排版；原来的安全缩放导出仍可选。两种方式都不调用 Qwen，也不会自动通过验收。</p>
 <div class="row"><label>选择导出规格</label>
 <select id="channelPreset">
-<option value="feed_4x5_native">4:5 原生排版（推荐）· 1080×1350</option>
+<option value="feed_4x5_native">4:5 原生排版 · 左侧文案 / 右侧商品 · 1080×1350</option>
+<option value="feed_4x5_native_product_focus">4:5 商品主体优先 · 商品上方 / 促销下方 · 1080×1350</option>
 <option value="feed_4x5">信息流竖版 · 1080×1350（4:5）</option>
 <option value="story_9x16">故事 / 竖屏 · 1080×1920（9:16）</option>
 <option value="landscape_16x9">横向展示 · 1200×675（16:9）</option>
@@ -731,7 +732,7 @@ function updateChannelExport(){
   const preset=$('channelPreset').value;
   const url='/api/posters/'+current.poster_id+'/versions/'+current.version+'/exports/'+preset;
   const sizes={
-    feed_4x5_native:[1080,1350],feed_4x5:[1080,1350],
+    feed_4x5_native:[1080,1350],feed_4x5_native_product_focus:[1080,1350],feed_4x5:[1080,1350],
     story_9x16:[1080,1920],landscape_16x9:[1200,675]
   };
   const dim=sizes[preset]||[1024,1024];
@@ -740,11 +741,20 @@ function updateChannelExport(){
   $('channelDownload').href=url;
   $('channelDownload').download='poster-v'+current.version+'-'+preset+'.png';
   $('channelStatus').textContent=preset==='feed_4x5_native'
-    ? '原生 4:5：分别重新排版商品、标题、价格和 CTA（不调用 AI）'
-    : '安全缩放：方形原图完整保留，背景延展，不重新排版文字';
-  $('checkNative').disabled=preset!=='feed_4x5_native';
-  $('nativeGateStatus').textContent='尚未检查当前 v'+current.version+' 的原生 4:5 导出';
-  $('nativeGateResult').textContent='未检查该导出版本';
+    ? '经典原生 4:5：左侧促销文案、右侧商品，独立重新排版；不调用 AI。'
+    : preset==='feed_4x5_native_product_focus'
+      ? '商品主体优先：上半部突出完整商品，下半部展示促销信息；不调用 AI。此版式需要单独验收。'
+      : '安全缩放：方形原图完整保留，背景延展，不重新排版文字。';
+  const isBaselineNative=preset==='feed_4x5_native';
+  const isProductFocus=preset==='feed_4x5_native_product_focus';
+  $('checkNative').disabled=!isBaselineNative;
+  $('nativeOcrMode').disabled=!isBaselineNative;
+  $('nativeGateStatus').textContent=isProductFocus
+    ? '此版式尚未接入当前 OCR / 人工验收流程，不能继承其他版式结论。'
+    : '尚未检查当前 v'+current.version+' 的原生 4:5 导出';
+  $('nativeGateResult').textContent=isProductFocus
+    ? '未验收此版式；请单独进行视觉与文案审核。'
+    : '未检查该导出版本';
   loadNativeReviewContext();
 }
 $('channelPreset').addEventListener('change',updateChannelExport);
