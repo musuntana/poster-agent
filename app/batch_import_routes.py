@@ -198,7 +198,8 @@ def list_batches(
         created = state.get("created_at")
         updated = state.get("updated_at")
         if (
-            phase not in {"READY", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"}
+            not isinstance(phase, str)
+            or phase not in {"READY", "RUNNING", "COMPLETED", "FAILED", "INTERRUPTED"}
             or not isinstance(sku_ids, list)
             or not 1 <= len(sku_ids) <= 100
             or type(count) is not int or not 0 <= count <= len(sku_ids)

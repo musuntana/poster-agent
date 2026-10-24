@@ -391,6 +391,12 @@ def test_web_batch_history_skips_corrupt_and_symlinked_directories(
     broken = root / ("f" * 32)
     broken.mkdir()
     (broken / "batch_status.json").write_text("{broken", encoding="utf-8")
+    wrong_type = root / ("d" * 32)
+    wrong_type.mkdir()
+    state = json.loads((root / valid / "batch_status.json").read_text(encoding="utf-8"))
+    state["batch_id"] = wrong_type.name
+    state["status"] = []
+    (wrong_type / "batch_status.json").write_text(json.dumps(state), encoding="utf-8")
     outside = tmp_path / "unrelated"
     outside.mkdir()
     (outside / "private.txt").write_text("do not read", encoding="utf-8")
@@ -401,7 +407,7 @@ def test_web_batch_history_skips_corrupt_and_symlinked_directories(
     assert response.status_code == 200, response.text
     data = response.json()
     assert [item["batch_id"] for item in data["items"]] == [valid]
-    assert data["skipped_invalid"] == 1
+    assert data["skipped_invalid"] == 2
     assert "private.txt" not in response.text
     assert (outside / "private.txt").read_text() == "do not read"
 
