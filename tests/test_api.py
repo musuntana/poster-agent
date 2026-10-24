@@ -205,3 +205,10 @@ def test_version_gallery_controls_are_available_in_editor():
         assert element in response.text
     assert 'populateHistoryVersions(data)' in response.text
     assert '当前编辑表单仍对应最新 v' in response.text
+
+
+def test_gallery_initializer_is_not_executed_at_script_top_level():
+    """An undefined 'data' at script load would abort the entire browser UI."""
+    source = client.get("/").text
+    assert "};populateHistoryVersions(data)" not in source
+    assert "populateHistoryVersions(data)}" in source
