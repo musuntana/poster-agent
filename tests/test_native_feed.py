@@ -224,3 +224,44 @@ def test_ui_exposes_product_focus_with_separate_acceptance_boundary():
     assert "exports/'+variant+'/human-review" in response.text
     assert "/api/annotations/native-4x5-product-focus/export.csv" in response.text
     assert "exports/'+variant+'/acceptance" in response.text
+
+
+def test_side_by_side_template_comparison_has_version_scoped_controls():
+    page = client.get("/")
+    assert page.status_code == 200
+    html = page.text
+    for element in (
+        'id="compareNativeLayouts"',
+        'id="nativeCompareGrid"',
+        'id="nativeCompareSplit"',
+        'id="nativeCompareFocus"',
+        'id="chooseNativeSplit"',
+        'id="chooseNativeFocus"',
+    ):
+        assert element in html
+    assert "resetNativeCompare();" in html
+    assert "showNativeCompare" in html
+    assert "nativeCompareGeneration" in html
+    assert "updateChannelExport();" in html
+    assert "两种模板都需要各自独立验收" in html
+
+
+def test_two_native_templates_export_from_same_immutable_version(
+    tmp_path, monkeypatch, product_bytes
+):
+    poster_id = _make(tmp_path, monkeypatch, product_bytes)
+    async def forbid_paid_provider(*_args, **_kwargs):
+        raise AssertionError("Comparing saved layouts must not call a paid model")
+    monkeypatch.setattr("app.main.generate_ai_background", forbid_paid_provider)
+    original = storage.version_path(poster_id, 1).read_bytes()
+    for_variant = "/api/posters/{}/versions/1/exports/{}"
+    classic = client.get(for_variant.format(poster_id, "feed_4x5_native"))
+    focus = client.get(for_variant.format(poster_id, "feed_4x5_native_product_focus"))
+    assert classic.status_code == focus.status_code == 200
+    assert classic.headers["x-source-image-sha256"] == hashlib.sha256(original).hexdigest()
+    assert focus.headers["x-source-image-sha256"] == hashlib.sha256(original).hexdigest()
+    assert classic.headers["x-layout-template"] == "split"
+    assert focus.headers["x-layout-template"] == "product_focus"
+    assert classic.content != focus.content
+    assert storage.version_path(poster_id, 1).read_bytes() == original
+    assert storage.view(poster_id)["version"] == 1

@@ -5,6 +5,14 @@
 <title>Poster Agent · M5h</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#e6edf7;background:#0b1221}header{padding:26px max(24px,calc((100% - 1170px)/2));border-bottom:1px solid #25364b;background:#101c2e}h1{font-size:25px;margin:0 0 6px}.sub{color:#9aafc6;font-size:14px;margin:0}.shell{max-width:1170px;margin:26px auto;padding:0 20px;display:grid;grid-template-columns:minmax(330px,430px) minmax(340px,1fr);gap:24px}.panel{background:#121f32;border:1px solid #31425b;border-radius:14px;padding:24px}.panel h2{font-size:18px;margin:0 0 18px}.row{display:grid;gap:7px;margin-bottom:15px}label{font-size:14px;color:#afc1d4}input,select,textarea{background:#0a1627;border:1px solid #3a4c61;border-radius:8px;color:#f0f5fc;padding:11px;width:100%;font-size:15px}input[type=file]{font-size:13px}button{border:0;border-radius:9px;padding:12px 17px;background:#67b6ff;color:#05192b;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.45;cursor:wait}button.secondary{background:#253c55;color:#e3f1ff}.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tip{color:#a6b6cc;font-size:13px;line-height:1.7}.execution-history{display:grid;gap:8px;margin-top:10px}.execution-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;background:#0a1627;border:1px solid #2d4157;border-radius:8px}.execution-row .summary{font-size:12px;color:#b7c9de;overflow-wrap:anywhere;flex:1;min-width:0}.execution-row .actions{gap:6px}.execution-row button{padding:6px 9px;font-size:12px}.bad{color:#ffadac}.good{color:#a5e9c4}.preview{width:100%;max-width:560px;aspect-ratio:1;border-radius:12px;object-fit:contain;border:1px dashed #3c536b;background:linear-gradient(135deg,#29334a,#0a1c35)}.tag{display:inline-flex;background:#243b50;border-radius:6px;padding:5px 8px;font-size:12px;color:#bed5f2;margin-bottom:12px}a{color:#8acaff;text-decoration:none}a:hover{text-decoration:underline}.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mt{margin-top:23px;border-top:1px solid #2c4056;padding-top:20px}.hidden{display:none}.style-presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:9px}.style-preset{display:flex;flex-direction:column;align-items:stretch;gap:5px;text-align:left;background:#1b2a40;color:#e9f3ff;border:2px solid transparent;padding:7px;border-radius:10px;min-width:0}.style-preset[aria-pressed="true"]{border-color:#84c9ff;background:#263c54}.style-preset:focus-visible{outline:3px solid #b7e2ff;outline-offset:2px}.style-swatch{height:52px;border-radius:6px}.style-name{font-size:12px;font-weight:700}.style-hint{font-size:11px;color:#b7c9de}@media(max-width:840px){.shell{grid-template-columns:1fr}}
+
+.template-compare-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.template-compare-grid.hidden{display:none}
+.template-compare-card{background:#0a1627;border:1px solid #35516d;border-radius:10px;padding:12px;display:grid;gap:10px;align-content:start}
+.template-compare-card .preview{aspect-ratio:4/5;max-width:100%;max-height:380px}
+.template-compare-card h3{font-size:14px;margin:0}
+.template-compare-card button{width:100%}
+@media(max-width:680px){.template-compare-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -130,6 +138,26 @@
 <p id="channelStatus" class="tip">请先生成海报，再选择尺寸。</p>
 <div class="actions"><a id="channelDownload" href="#" download="poster-channel.png">导出该尺寸 PNG</a></div>
 <p class="tip">原生 4:5 使用独立文字、SKU 与价格布局；其它规格延用原图完整安全缩放。方形版 OCR 验收结果不适用于任一派生图。</p>
+<div class="row mt" id="nativeTemplateCompare">
+  <div class="actions">
+    <button type="button" id="compareNativeLayouts" class="secondary">并排对比两种 4:5 模板</button>
+    <span class="tip" id="nativeCompareStatus" aria-live="polite">点击后按需生成两个本地排版预览，不调用 AI。</span>
+  </div>
+  <div id="nativeCompareGrid" class="template-compare-grid hidden">
+    <div class="template-compare-card">
+      <h3>经典分栏 · 左文案 / 右商品</h3>
+      <img id="nativeCompareSplit" class="preview" alt="经典分栏 4:5 原生模板预览" loading="eager">
+      <button id="chooseNativeSplit" type="button" class="secondary" disabled>选择经典分栏并查看导出</button>
+    </div>
+    <div class="template-compare-card">
+      <h3>商品主体优先 · 上商品 / 下促销</h3>
+      <img id="nativeCompareFocus" class="preview" alt="商品主体优先 4:5 原生模板预览" loading="eager">
+      <button id="chooseNativeFocus" type="button" class="secondary" disabled>选择商品主体优先并查看导出</button>
+    </div>
+  </div>
+  <p class="tip">对比使用同一张已保存的商品和同一个海报版本，不修改原文件；两种模板都需要各自独立验收。</p>
+</div>
+
 <div class="row"><label>原生 4:5 单独验收</label><select id="nativeOcrMode">
 <option value="none">规则检查（不调用 OCR）</option>
 <option value="paddle">真实 PaddleOCR（本地需安装）</option>
@@ -473,7 +501,7 @@ async function fingerprintFormData(body){
   return JSON.stringify(entries);
 }
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、');populateHistoryVersions(data)}
+function display(data){current=data; resetNativeCompare(); updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、');populateHistoryVersions(data)}
 let historyPreviewRequest=0;
 function populateHistoryVersions(data){
   const select=$('historyVersionSelect');
@@ -738,6 +766,61 @@ $('saveNativeReview').addEventListener('click',async()=>{
   }
 });
 nativeReviewExportUrl();
+
+
+const NATIVE_COMPARE_CHOICES=[
+  ['feed_4x5_native','nativeCompareSplit','chooseNativeSplit'],
+  ['feed_4x5_native_product_focus','nativeCompareFocus','chooseNativeFocus']
+];
+let nativeCompareGeneration=0;
+
+function resetNativeCompare(){
+  nativeCompareGeneration+=1;
+  $('nativeCompareGrid').classList.add('hidden');
+  $('nativeCompareStatus').textContent='点击后按需生成两个本地排版预览，不调用 AI。';
+  for(const [_variant,imageId,buttonId] of NATIVE_COMPARE_CHOICES){
+    $(buttonId).disabled=true;
+    $(imageId).removeAttribute('src');
+  }
+}
+
+function showNativeCompare(){
+  if(!current)return;
+  const posterId=current.poster_id,version=current.version;
+  const generation=++nativeCompareGeneration;
+  let loaded=0;
+  $('nativeCompareGrid').classList.remove('hidden');
+  $('nativeCompareStatus').textContent='正在加载同一版本 v'+version+' 的两种本地原生排版…';
+  for(const [variant,imageId,buttonId] of NATIVE_COMPARE_CHOICES){
+    const image=$(imageId);
+    $(buttonId).disabled=true;
+    image.onload=()=>{
+      if(generation!==nativeCompareGeneration)return;
+      $(buttonId).disabled=false;
+      loaded+=1;
+      if(loaded===NATIVE_COMPARE_CHOICES.length){
+        $('nativeCompareStatus').textContent='两个预览已载入，均来自 v'+version+
+          '。请选择要导出的模板，并对所选模板单独验收。';
+      }
+    };
+    image.onerror=()=>{
+      if(generation!==nativeCompareGeneration)return;
+      $(buttonId).disabled=true;
+      $('nativeCompareStatus').textContent='有模板预览失败：可能文案超出其排版空间，请缩短文字后生成新版本。';
+    };
+    image.src='/api/posters/'+posterId+'/versions/'+version+'/exports/'+variant;
+  }
+}
+
+$('compareNativeLayouts').addEventListener('click',showNativeCompare);
+for(const [variant,_imageId,buttonId] of NATIVE_COMPARE_CHOICES){
+  $(buttonId).addEventListener('click',()=>{
+    if(!current || $(buttonId).disabled)return;
+    $('channelPreset').value=variant;
+    updateChannelExport();
+    $('channelPreview').scrollIntoView({behavior:'smooth',block:'nearest'});
+  });
+}
 
 function updateChannelExport(){
   if(!current)return;
