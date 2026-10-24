@@ -13,6 +13,9 @@
 .template-compare-card h3{font-size:14px;margin:0}
 .template-compare-card button{width:100%}
 @media(max-width:680px){.template-compare-grid{grid-template-columns:1fr}}
+#batchProgress{width:100%;height:14px;margin:8px 0;accent-color:#67b6ff}
+#batchRows .execution-row{align-items:flex-start}
+#batchRows .execution-row .summary{white-space:normal}
 </style>
 </head>
 <body>
@@ -85,6 +88,21 @@
 <p class="tip">渲染主版本为 1024×1024，支持多尺寸安全派生（非自适应重排）；AI 只生成背景，商品与价格来自上传素材和精确排版。本地版无登录，请仅在个人电脑或可信网络运行。</p>
 </section>
 <section class="panel">
+<section id="batchImportPanel" class="mt">
+<h2>本地批量商品导入与进度</h2>
+<p class="tip">上传 CSV 与其引用的商品图/Logo，先对全批进行预检，再显式开始生成。只使用本地免费背景，不调用 Qwen 生图或 OCR；每个 SKU 完成后都会写入本地批次账本，可在中断后续跑。</p>
+<div class="row"><label for="batchManifest">SKU 清单 CSV（UTF-8）</label><input id="batchManifest" type="file" accept=".csv,text/csv"></div>
+<div class="row"><label for="batchImages">CSV 引用的所有图片（PNG / JPEG / WEBP；每张不超过 10 MiB）</label><input id="batchImages" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>
+<p class="tip">必填列：sku_id、product_image、title、price。可选：original_price、subtitle、cta、style、logo_image。网页批量导入要求 product_image / logo_image 使用文件名，不带目录；每批 1–100 个 SKU。图片只保存在本机。</p>
+<div class="actions">
+<button id="preflightBatch" type="button">上传并预检</button>
+<button id="applyBatch" type="button" disabled>生成海报（本地背景）</button>
+</div>
+<p id="batchStatus" class="tip" aria-live="polite">尚未选择批次。预检不会创建海报；只有点击生成后才开始处理。</p>
+<progress id="batchProgress" max="100" value="0" aria-label="批量生成进度"></progress>
+<div id="batchPlanSummary" class="tip"></div>
+<div id="batchRows" class="execution-history" aria-live="polite"></div>
+</section>
 <section id="trialQueue" style="margin-bottom:24px">
 <h2>本地 4:5 验收队列</h2>
 <p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
@@ -1104,6 +1122,138 @@ $('saveHuman').addEventListener('click',async()=>{
       $('saveHuman').disabled=false;
   }
 });
+const BATCH_STORAGE_KEY='poster-agent-active-batch';
+let currentBatchId=null;
+let batchPollTimer=null;
+let batchPollGeneration=0;
+function batchStatusLabel(status){
+  return ({READY:'已预检，等待开始',RUNNING:'正在生成',COMPLETED:'批次已完成',FAILED:'批次中断，可安全续跑',INTERRUPTED:'服务中断，可安全续跑',UNKNOWN:'状态未知',PENDING:'待处理'})[status]||status;
+}
+function resetBatchForNewFiles(){
+  if(batchPollTimer){clearTimeout(batchPollTimer);batchPollTimer=null;}
+  batchPollGeneration+=1;
+  currentBatchId=null;
+  localStorage.removeItem(BATCH_STORAGE_KEY);
+  $('applyBatch').disabled=true;
+  $('batchProgress').value=0;
+  $('batchRows').replaceChildren();
+  $('batchPlanSummary').textContent='';
+  $('batchStatus').textContent='文件已更改，请重新预检。';
+}
+function renderBatchState(state){
+  if(!state || state.batch_id!==currentBatchId)return;
+  localStorage.setItem(BATCH_STORAGE_KEY,state.batch_id);
+  const total=Number(state.total)||0;
+  const processed=Math.min(total,Number(state.processed)||0);
+  $('batchProgress').value=total?Math.round(processed*100/total):0;
+  const current=state.current_sku?' · 当前 SKU：'+state.current_sku:'';
+  const error=state.error?' · '+state.error:'';
+  $('batchStatus').textContent=batchStatusLabel(state.status)+' · '+processed+'/'+total+current+error;
+  $('batchStatus').className='tip '+(state.status==='COMPLETED'?'good':state.status==='FAILED'?'bad':'');
+  $('batchPlanSummary').textContent=state.plan
+    ? 'SKU 数：'+state.plan.total_skus+' · 不同商品图哈希数：'+state.plan.unique_source_files+
+      ' · 收费模型：'+(state.plan.no_paid_model?'不会调用':'需进一步核对')
+    : '';
+  $('applyBatch').disabled=!['READY','FAILED','INTERRUPTED'].includes(state.status);
+  $('applyBatch').textContent=(state.status==='FAILED'||state.status==='INTERRUPTED')
+    ? '继续批次' : state.status==='COMPLETED' ? '批次已完成' : '生成海报（本地背景）';
+  $('preflightBatch').disabled=state.status==='RUNNING';
+  const host=$('batchRows');
+  host.replaceChildren();
+  for(const item of (state.rows||[])){
+    const row=document.createElement('div');
+    row.className='execution-row';
+    const summary=document.createElement('span');
+    summary.className='summary';
+    summary.textContent='SKU '+item.sku_id+' · '+batchStatusLabel(item.status)+
+      (item.poster_id?' · 海报 '+item.poster_id.slice(0,8)+'…':'');
+    row.appendChild(summary);
+    if(item.poster_id){
+      const open=document.createElement('button');
+      open.type='button';open.className='secondary';open.textContent='打开海报';
+      open.addEventListener('click',()=>restoreExecutionPoster(item.poster_id));
+      row.appendChild(open);
+    }
+    host.appendChild(row);
+  }
+  if(batchPollTimer){clearTimeout(batchPollTimer);batchPollTimer=null;}
+  if(state.status==='RUNNING')scheduleBatchPoll(state.batch_id);
+}
+function scheduleBatchPoll(batchId){
+  if(batchPollTimer)clearTimeout(batchPollTimer);
+  const generation=++batchPollGeneration;
+  batchPollTimer=setTimeout(async()=>{
+    if(generation!==batchPollGeneration||currentBatchId!==batchId)return;
+    await refreshBatchState(batchId);
+  },1500);
+}
+async function refreshBatchState(batchId){
+  try{
+    const response=await fetch('/api/batches/'+encodeURIComponent(batchId));
+    const state=await response.json();
+    if(!response.ok)throw Error(errorText(state));
+    if(currentBatchId===batchId)renderBatchState(state);
+  }catch(err){
+    if(currentBatchId===batchId){
+      $('batchStatus').textContent='读取批次状态失败：'+err.message;
+      $('batchStatus').className='tip bad';
+    }
+  }
+}
+$('batchManifest').addEventListener('change',resetBatchForNewFiles);
+$('batchImages').addEventListener('change',resetBatchForNewFiles);
+$('preflightBatch').addEventListener('click',async()=>{
+  const manifest=$('batchManifest').files[0];
+  const images=Array.from($('batchImages').files||[]);
+  if(!manifest||!images.length){
+    $('batchStatus').textContent='请同时选择 CSV 和该清单引用的全部图片。';
+    $('batchStatus').className='tip bad';
+    return;
+  }
+  const body=new FormData();
+  body.append('manifest',manifest,manifest.name);
+  for(const file of images)body.append('images',file,file.name);
+  $('preflightBatch').disabled=true;
+  $('applyBatch').disabled=true;
+  $('batchStatus').textContent='正在上传到本机并校验全部 SKU；此步骤不会创建海报…';
+  $('batchStatus').className='tip';
+  try{
+    const response=await fetch('/api/batches',{method:'POST',body});
+    const state=await response.json();
+    if(!response.ok)throw Error(errorText(state));
+    currentBatchId=state.batch_id;
+    renderBatchState(state);
+  }catch(err){
+    $('batchStatus').textContent='批次预检失败：'+err.message;
+    $('batchStatus').className='tip bad';
+  }finally{
+    $('preflightBatch').disabled=false;
+  }
+});
+$('applyBatch').addEventListener('click',async()=>{
+  if(!currentBatchId)return;
+  const batchId=currentBatchId;
+  $('applyBatch').disabled=true;
+  $('batchStatus').textContent='正在启动本地批次…';
+  try{
+    const response=await fetch('/api/batches/'+encodeURIComponent(batchId)+'/apply',{method:'POST'});
+    const state=await response.json();
+    if(!response.ok)throw Error(errorText(state));
+    if(currentBatchId===batchId)renderBatchState(state);
+    await refreshBatchState(batchId);
+  }catch(err){
+    $('batchStatus').textContent='无法启动批次：'+err.message;
+    $('batchStatus').className='tip bad';
+    $('applyBatch').disabled=false;
+  }
+});
+(async function restoreLastBatch(){
+  const saved=localStorage.getItem(BATCH_STORAGE_KEY);
+  if(!saved||!/^[a-f0-9]{32}$/.test(saved))return;
+  currentBatchId=saved;
+  $('batchStatus').textContent='正在恢复上次批次状态…';
+  await refreshBatchState(saved);
+})();
 refreshExportLink();
 
 (async function restoreLastPoster(){

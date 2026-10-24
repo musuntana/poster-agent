@@ -15,6 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Any, Callable
 
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
@@ -152,7 +153,14 @@ def _file_parts(item: dict) -> dict:
     return parts
 
 
-def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
+def run_batch(
+    manifest: Path,
+    output_dir: Path,
+    *,
+    apply: bool = False,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    manage_lifespan: bool = True,
+) -> dict:
     manifest_sha, prepared = preflight(manifest)
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -172,8 +180,8 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
         if "expected_sku_ids" in state and state["expected_sku_ids"] != expected_sku_ids:
             raise BatchError("现有批次账本的预期 SKU 与当前 CSV 不一致")
         if "expected_sku_count" in state and (
-            type(state["expected_sku_count"]) is not int or
-            state["expected_sku_count"] != len(expected_sku_ids)
+            type(state["expected_sku_count"]) is not int
+            or state["expected_sku_count"] != len(expected_sku_ids)
         ):
             raise BatchError("现有批次账本的预期 SKU 数量不一致")
     else:
@@ -200,11 +208,23 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
         _write_json_atomic(output_dir / "batch_preflight.json", plan)
         return plan
 
-    # The existing local-only FastAPI route, rather than an alternate
-    # uploader, owns the payment mode, image checks and storage semantics.
-    with TestClient(app) as client:
+    def report(phase: str, item: dict, poster_id: str | None = None) -> None:
+        if progress_callback is not None:
+            progress_callback({
+                "phase": phase,
+                "processed": len(state["rows"]),
+                "total": len(prepared),
+                "current_sku": item["sku_id"] if phase != "COMPLETED" else None,
+                "poster_id": poster_id,
+            })
+
+    # The existing local-only FastAPI route owns upload validation, storage,
+    # and idempotency. Web batches avoid re-running app startup recovery inside
+    # an already-running server; the CLI keeps its historical lifespan behavior.
+    def apply_rows(client: TestClient) -> None:
         for item in prepared:
             sku = item["sku_id"]
+            report("STARTED", item)
             old = state["rows"].get(sku)
             if old is not None:
                 if old.get("request_sha256") != item["request_sha256"]:
@@ -213,6 +233,7 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
                     storage.version_path(old["poster_id"], 1)
                 except (KeyError, FileNotFoundError) as exc:
                     raise BatchError(f"{sku}：导入账本指向不存在的海报，需人工对账") from exc
+                report("ROW_COMPLETED", item, old["poster_id"])
                 continue
 
             files = _file_parts(item)
@@ -241,15 +262,39 @@ def run_batch(manifest: Path, output_dir: Path, *, apply: bool = False) -> dict:
                 "idempotency_key": item["idempotency_key"],
             }
             # Commit success after every SKU. If the process dies between API
-            # response and this write, the existing execution ledger recovers
-            # the same response on resume without another poster render.
+            # response and this write, the execution ledger recovers the same
+            # response on resume without another poster render.
             _write_json_atomic(output, state)
+            report("ROW_COMPLETED", item, poster_id)
+
+    if manage_lifespan:
+        with TestClient(app) as client:
+            apply_rows(client)
+    else:
+        client = TestClient(app)
+        try:
+            apply_rows(client)
+        finally:
+            client.close()
+
     if set(state["rows"]) != set(expected_sku_ids):
         raise BatchError("导入未覆盖全部预期 SKU，拒绝标记为完成")
     state["completed"] = True
     _write_json_atomic(output, state)
-    return {**plan, "created_or_reused": len(state["rows"]),
-            "poster_ids": {sku: row["poster_id"] for sku, row in state["rows"].items()}}
+    result = {
+        **plan,
+        "created_or_reused": len(state["rows"]),
+        "poster_ids": {sku: row["poster_id"] for sku, row in state["rows"].items()},
+    }
+    if progress_callback is not None:
+        progress_callback({
+            "phase": "COMPLETED",
+            "processed": len(state["rows"]),
+            "total": len(prepared),
+            "current_sku": None,
+            "poster_id": None,
+        })
+    return result
 
 
 def main() -> int:
