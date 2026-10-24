@@ -518,3 +518,87 @@ def test_distinct_variant_directories_remain_independent(
     assert json.loads((focus / "native_trial_readiness.json").read_text())["variant_id"] == PRODUCT_FOCUS_VARIANT
     assert not (classic / "native_real_summary.json").exists()
     assert not (focus / "native_real_summary.json").exists()
+
+
+def _synthetic_batch_scope(journal_digest: str = "a", manifest_digest: str = "b"):
+    """A small validated-shape cohort identity; no real SKUs or OCR involved."""
+    return {
+        "scope_mode": "batch_latest_per_sku",
+        "sku_by_id": {"a" * 32: "sku-01"},
+        "source_batch_journal_sha256": journal_digest * 64,
+        "source_manifest_sha256": manifest_digest * 64,
+        "batch_sku_count": 1,
+        "batch_unique_raw_product_sha256_count": 1,
+    }
+
+
+def test_same_variant_reviewer_new_batch_cannot_reuse_trial_directory(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "missing-posters"))
+    output = tmp_path / "cohort-a"
+    first = _synthetic_batch_scope("a", "b")
+    second = _synthetic_batch_scope("c", "d")
+    audit = run_trial(REVIEWER, output, batch_scope=first)
+    assert audit["source_batch_journal_sha256"] == "a" * 64
+    before = _eval_files_snapshot(output)
+
+    with pytest.raises(ValueError, match="批次.*独立目录"):
+        run_trial(REVIEWER, output, batch_scope=second)
+    assert _eval_files_snapshot(output) == before
+
+    with pytest.raises(ValueError, match="批次.*独立目录"):
+        run_trial(REVIEWER, output, batch_scope=second, score=True)
+    assert _eval_files_snapshot(output) == before
+
+    # Same immutable cohort remains resumable/re-auditable by the same reviewer.
+    repeat = run_trial(REVIEWER, output, batch_scope=first)
+    assert repeat["source_batch_journal_sha256"] == "a" * 64
+    assert repeat["trial_run_id"] != audit["trial_run_id"]
+
+
+def test_unscoped_and_scoped_audits_cannot_share_output_directory(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "missing-posters"))
+    scope = _synthetic_batch_scope()
+    all_dir = tmp_path / "all-posters"
+    batch_dir = tmp_path / "batch"
+    run_trial(REVIEWER, all_dir)
+    run_trial(REVIEWER, batch_dir, batch_scope=scope)
+    before_all = _eval_files_snapshot(all_dir)
+    before_batch = _eval_files_snapshot(batch_dir)
+
+    with pytest.raises(ValueError, match="批次范围.*独立目录"):
+        run_trial(REVIEWER, all_dir, batch_scope=scope)
+    assert _eval_files_snapshot(all_dir) == before_all
+
+    with pytest.raises(ValueError, match="批次范围.*独立目录"):
+        run_trial(REVIEWER, batch_dir)
+    assert _eval_files_snapshot(batch_dir) == before_batch
+
+
+def test_invalid_prior_batch_provenance_fails_closed_without_mutating_files(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "missing-posters"))
+    output = tmp_path / "batch"
+    scope = _synthetic_batch_scope()
+    run_trial(REVIEWER, output, batch_scope=scope)
+    readiness_file = output / "native_trial_readiness.json"
+    baseline = json.loads(readiness_file.read_text(encoding="utf-8"))
+
+    for change in (
+        {"source_batch_journal_sha256": "NOT_A_DIGEST"},
+        {"source_batch_journal_sha256": None},
+        {"source_manifest_sha256": "x" * 64},
+        {"scope_mode": "unrecognized_scope"},
+    ):
+        corrupted = {**baseline, **change}
+        readiness_file.write_text(
+            json.dumps(corrupted, ensure_ascii=False), encoding="utf-8"
+        )
+        before = _eval_files_snapshot(output)
+        with pytest.raises(ValueError, match="批次.*独立目录"):
+            run_trial(REVIEWER, output, batch_scope=scope)
+        assert _eval_files_snapshot(output) == before
