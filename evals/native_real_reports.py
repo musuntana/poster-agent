@@ -43,7 +43,7 @@ def read_native_labels(path: Path, *, variant: NativeVariant = VARIANT) -> list[
             try:
                 poster_id = row["poster_id"].strip()
                 version = int(row["version"])
-                variant = row["variant_id"].strip()
+                row_variant = row["variant_id"].strip()
                 field = row["field"].strip()
                 defective = row["defective"].strip().lower()
                 image_sha = row["image_sha256"].strip().lower()
@@ -51,7 +51,7 @@ def read_native_labels(path: Path, *, variant: NativeVariant = VARIANT) -> list[
                 reviewer = row["reviewer"].strip()
                 if not VALID_ID.fullmatch(poster_id) or version < 1:
                     raise ValueError("invalid poster/version")
-                if row["variant_id"].strip() != variant or field not in OCR_FIELDS | VISUAL:
+                if row_variant != variant or field not in OCR_FIELDS | VISUAL:
                     raise ValueError("wrong variant or field")
                 if defective not in {"true", "false"}:
                     raise ValueError("invalid human label")
@@ -65,7 +65,7 @@ def read_native_labels(path: Path, *, variant: NativeVariant = VARIANT) -> list[
                 seen.add(identity)
                 reviewers.add(reviewer)
                 records.append({
-                    "poster_id": poster_id, "version": version, "variant_id": variant,
+                    "poster_id": poster_id, "version": version, "variant_id": row_variant,
                     "field": field, "defective": defective == "true",
                     "image_sha256": image_sha, "source_image_sha256": source_sha,
                     "reviewer": reviewer,
