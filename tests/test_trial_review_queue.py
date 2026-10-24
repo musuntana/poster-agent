@@ -234,3 +234,49 @@ def test_variant_aware_queue_rejects_unknown_variants_and_wires_editor():
     assert 'value="feed_4x5_native_product_focus"' in html
     assert "variant='+encodeURIComponent(variant)" in html
     assert "$('channelPreset').value=variant;display(poster)" in html
+
+
+
+def test_focus_ready_queue_does_not_enable_classic_only_scoring(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from evals.native_trial import audit_trial
+
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    focus_id = "feed_4x5_native_product_focus"
+    url = f"/api/posters/{pid}/versions/1/exports/{focus_id}/human-review"
+    ctx = client.get(url, params={"reviewer": REVIEWER}).json()
+    submitted = client.post(url, json={
+        "reviewer": REVIEWER,
+        "image_sha256": ctx["image_sha256"],
+        "source_image_sha256": ctx["source_image_sha256"],
+        "spec_sha256": ctx["spec_sha256"],
+        "asset_sha256": ctx["asset_sha256"],
+        "fields": {
+            name: {"judgment": "correct", "reason": ""}
+            for name in ctx["fields_to_review"]
+        },
+    })
+    assert submitted.status_code == 201, submitted.text
+
+    checks = [
+        {"name": "ocr_" + key, "status": "PASS"}
+        for key in ("title", "subtitle", "price", "original_price", "cta")
+    ] + [
+        {"name": "ocr_price_position", "status": "PASS"},
+        {"name": "ocr_original_price_position", "status": "PASS"},
+    ]
+    def synthetic_report(_poster, _version, _mode, *, variant):
+        assert variant == focus_id
+        return {
+            "ocr_mode": "paddle", "ocr_status": "OK",
+            "image_dimensions": [1080, 1350],
+            "checks": checks,
+        }
+
+    monkeypatch.setattr("evals.native_trial.verified_report", synthetic_report)
+    summary, rows = audit_trial(REVIEWER, variant=focus_id)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "READY"
+    assert summary["variant_id"] == focus_id
+    assert summary["can_score"] is False
