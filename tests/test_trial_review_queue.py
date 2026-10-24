@@ -159,3 +159,126 @@ def test_invalid_reviewer_rejected_and_html_controls_use_safe_text_content(
     assert "hint.textContent=" in html
     assert "display(poster)" in html
     assert "item.version" in html
+
+
+
+def test_review_queue_keeps_classic_and_product_focus_statuses_separate(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    classic_id = "feed_4x5_native"
+    focus_id = "feed_4x5_native_product_focus"
+    url = "/api/trials/review-queue"
+
+    before = client.get(url, params={"reviewer": REVIEWER, "variant": focus_id})
+    assert before.status_code == 200, before.text
+    assert before.json()["variant_id"] == focus_id
+    assert before.json()["latest_status_counts"] == {"NEEDS_REVIEW": 1}
+    assert before.json()["items"][0]["native_image_url"].endswith(
+        "/exports/" + focus_id
+    )
+
+    focus_review = (
+        f"/api/posters/{pid}/versions/1/exports/{focus_id}/human-review"
+    )
+    context = client.get(focus_review, params={"reviewer": REVIEWER})
+    assert context.status_code == 200, context.text
+    info = context.json()
+    payload = {
+        "reviewer": REVIEWER,
+        "image_sha256": info["image_sha256"],
+        "source_image_sha256": info["source_image_sha256"],
+        "spec_sha256": info["spec_sha256"],
+        "asset_sha256": info["asset_sha256"],
+        "fields": {
+            field: {"judgment": "correct", "reason": ""}
+            for field in info["fields_to_review"]
+        },
+    }
+    saved = client.post(focus_review, json=payload)
+    assert saved.status_code == 201, saved.text
+
+    focus_queue = client.get(
+        url, params={"reviewer": REVIEWER, "variant": focus_id}
+    ).json()
+    classic_queue = client.get(
+        url, params={"reviewer": REVIEWER, "variant": classic_id}
+    ).json()
+    default_queue = _queue().json()
+    assert focus_queue["latest_status_counts"] == {"OCR_MISSING": 1}
+    assert classic_queue["latest_status_counts"] == {"NEEDS_REVIEW": 1}
+    assert default_queue["variant_id"] == classic_id
+    assert default_queue["latest_status_counts"] == {"NEEDS_REVIEW": 1}
+    assert focus_queue["automatically_approved"] is False
+
+    rev = client.post(f"/api/posters/{pid}/revisions", json={"price": "189"})
+    assert rev.status_code == 201, rev.text
+    after = client.get(
+        url, params={"reviewer": REVIEWER, "variant": focus_id}
+    ).json()
+    assert after["items"][0]["version"] == 2
+    assert after["latest_status_counts"] == {"NEEDS_REVIEW": 1}
+
+
+def test_variant_aware_queue_rejects_unknown_variants_and_wires_editor():
+    response = client.get(
+        "/api/trials/review-queue",
+        params={"reviewer": REVIEWER, "variant": "random_square"},
+    )
+    assert response.status_code == 422
+
+    page = client.get("/")
+    assert page.status_code == 200
+    html = page.text
+    assert 'id="reviewQueueVariant"' in html
+    assert 'value="feed_4x5_native_product_focus"' in html
+    assert "variant='+encodeURIComponent(variant)" in html
+    assert "证据齐备（当前评分器不支持）" in html
+    assert "$('channelPreset').value=data.variant_id;display(poster)" in html
+
+
+
+def test_focus_ready_queue_does_not_enable_classic_only_scoring(
+    tmp_path, monkeypatch, product_bytes,
+):
+    from evals.native_trial import audit_trial
+
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    focus_id = "feed_4x5_native_product_focus"
+    url = f"/api/posters/{pid}/versions/1/exports/{focus_id}/human-review"
+    ctx = client.get(url, params={"reviewer": REVIEWER}).json()
+    submitted = client.post(url, json={
+        "reviewer": REVIEWER,
+        "image_sha256": ctx["image_sha256"],
+        "source_image_sha256": ctx["source_image_sha256"],
+        "spec_sha256": ctx["spec_sha256"],
+        "asset_sha256": ctx["asset_sha256"],
+        "fields": {
+            name: {"judgment": "correct", "reason": ""}
+            for name in ctx["fields_to_review"]
+        },
+    })
+    assert submitted.status_code == 201, submitted.text
+
+    checks = [
+        {"name": "ocr_" + key, "status": "PASS"}
+        for key in ("title", "subtitle", "price", "original_price", "cta")
+    ] + [
+        {"name": "ocr_price_position", "status": "PASS"},
+        {"name": "ocr_original_price_position", "status": "PASS"},
+    ]
+    def synthetic_report(_poster, _version, _mode, *, variant):
+        assert variant == focus_id
+        return {
+            "ocr_mode": "paddle", "ocr_status": "OK",
+            "image_dimensions": [1080, 1350],
+            "checks": checks,
+        }
+
+    monkeypatch.setattr("evals.native_trial.verified_report", synthetic_report)
+    summary, rows = audit_trial(REVIEWER, variant=focus_id)
+    assert len(rows) == 1
+    assert rows[0]["status"] == "READY"
+    assert "评分器尚不支持" in rows[0]["action"]
+    assert summary["variant_id"] == focus_id
+    assert summary["can_score"] is False

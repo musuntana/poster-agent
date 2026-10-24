@@ -115,8 +115,13 @@
 </section>
 <section id="trialQueue" style="margin-bottom:24px">
 <h2>本地 4:5 验收队列</h2>
-<p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。只展示每张海报最新版本，READY 仅代表可以评分，不等于可投放。</p>
+<p class="tip">复用当前人工审核员代号（下方“4:5 原生海报人工验收”中可修改）。按版式独立列出最新版本的人工审核与 OCR 状态。经典分栏 READY 表示可参与现有 M5e 评分；商品主体优先 READY 仅表示当前版式证据齐备，尚不可复用经典版式评分工具；都不代表可投放。</p>
 <div class="actions">
+<label for="reviewQueueVariant">验收版式</label>
+<select id="reviewQueueVariant" aria-label="选择当前验收队列对应的 4:5 原生版式">
+<option value="feed_4x5_native">经典分栏 4:5</option>
+<option value="feed_4x5_native_product_focus">商品主体优先 4:5</option>
+</select>
 <button id="loadReviewQueue" class="secondary" type="button">刷新本地验收队列</button>
 <label for="batchReviewFile">仅看 M5g 批次</label>
 <input type="file" id="batchReviewFile" accept=".json,application/json" aria-label="选择 M5g 的 batch_import_results.json">
@@ -612,7 +617,9 @@ function renderReviewQueue(data){
   const listed=batchReviewScope ? data.items.filter(x=>batchReviewScope.ids.has(x.poster_id)) : data.items;
   const missing=batchReviewScope ? batchReviewScope.ids.size-listed.length : 0;
   $('reviewQueueStatus').textContent=(batchReviewScope?'本批次 ':'全部 ')+listed.length+
-    ' 张待检海报（总库 '+data.total_posters+' 张）；按待处理状态排序。'+
+    ' 张待检海报（总库 '+data.total_posters+' 张，版式：'+
+    (data.variant_id==='feed_4x5_native_product_focus'?'商品主体优先':'经典分栏')+
+    '）；按待处理状态排序。'+
     (missing ? '本批次有 '+missing+' 个 ID 不在当前海报库，请核对 POSTER_DATA_DIR。':'');
   for(const item of listed){
     const row=document.createElement('div');
@@ -623,7 +630,9 @@ function renderReviewQueue(data){
     const sku=batchReviewScope?.ids.get(item.poster_id);
     label.textContent=(sku?'SKU '+sku+' · ':'')+item.title+' · v'+item.version;
     const hint=document.createElement('div');hint.className='tip';
-    hint.textContent=(QUEUE_STATUS_LABELS[item.status]||item.status)+' · '+item.action;
+    hint.textContent=(item.status==='READY'&&data.variant_id==='feed_4x5_native_product_focus'
+      ? '证据齐备（当前评分器不支持）'
+      : (QUEUE_STATUS_LABELS[item.status]||item.status))+' · '+item.action;
     text.append(label,hint);
     const open=document.createElement('button');
     open.type='button';open.className='secondary';open.textContent='打开审核';
@@ -633,7 +642,7 @@ function renderReviewQueue(data){
         const res=await fetch(item.poster_url);const poster=await res.json();
         if(!res.ok)throw Error(errorText(poster));
         if(poster.version!==item.version)throw Error('该海报已有新版本，请刷新队列');
-        $('channelPreset').value='feed_4x5_native';display(poster);
+        $('channelPreset').value=data.variant_id;display(poster);
         $('preview').scrollIntoView({behavior:'smooth',block:'start'});
         $('reviewQueueStatus').textContent='已打开 '+(sku||item.title)+' · v'+item.version+
           '；核对 4:5 预览后进行人工标注。';
@@ -669,17 +678,24 @@ const QUEUE_STATUS_LABELS={
   OCR_CHECKS_INVALID:'OCR 证据不完整',REVIEW_STALE:'人工审核过期',
   SOURCE_INVALID:'源素材/版本异常',READY:'可评分（非投放批准）'
 };
+$('reviewQueueVariant').addEventListener('change',()=>{
+  lastReviewQueueData=null;
+  $('reviewQueueItems').replaceChildren();
+  $('reviewQueueStatus').textContent='版式已切换，请刷新验收队列；人工审核和 OCR 证据不跨版式继承。';
+});
 $('loadReviewQueue').addEventListener('click',async()=>{
   const button=$('loadReviewQueue');
   const reviewer=$('nativeReviewer').value.trim();
+  const variant=$('reviewQueueVariant').value;
   button.disabled=true;
   $('reviewQueueStatus').textContent='正在盘点已保存的原生版本；不会触发 OCR…';
   $('reviewQueueItems').replaceChildren();
   try{
-    const response=await fetch('/api/trials/review-queue?reviewer='+encodeURIComponent(reviewer));
+    const response=await fetch('/api/trials/review-queue?reviewer='+encodeURIComponent(reviewer)+'&variant='+encodeURIComponent(variant));
     const data=await response.json();
     if(!response.ok)throw Error(errorText(data));
-    if(reviewer!==$('nativeReviewer').value.trim())return;
+    if(reviewer!==$('nativeReviewer').value.trim() ||
+       variant!==$('reviewQueueVariant').value || data.variant_id!==variant)return;
     renderReviewQueue(data);
   }catch(e){$('reviewQueueStatus').textContent='读取队列失败：'+e.message;}
   finally{button.disabled=false;}

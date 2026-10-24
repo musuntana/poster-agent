@@ -19,11 +19,18 @@ from pathlib import Path
 from app import native_human_reviews as reviews
 from app import storage
 from app.human_annotations import REVIEWER_PATTERN, VALID_ID
-from app.native_acceptance import StaleNativeEvidence, verified_report
+from app.native_acceptance import (
+    NATIVE_VARIANTS, VARIANT, NativeVariant, StaleNativeEvidence, verified_report,
+)
 from evals.native_real_reports import OCR_FIELDS, _text_prediction
 
 
-def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict, list[dict]]:
+def audit_trial(
+    reviewer: str, *, batch_scope: dict | None = None,
+    variant: NativeVariant = VARIANT,
+) -> tuple[dict, list[dict]]:
+    if variant not in NATIVE_VARIANTS:
+        raise ValueError("不支持的原生版式")
     if not re.fullmatch(REVIEWER_PATTERN, reviewer):
         raise ValueError("审核员代号只能使用 2–40 位字母、数字、下划线和短横线")
     rows: list[dict] = []
@@ -65,7 +72,7 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
                     "action": "",
                 }
                 try:
-                    ctx = reviews.context(poster.name, version, reviewer)
+                    ctx = reviews.context(poster.name, version, reviewer, variant=variant)
                     row["product_sha256"] = ctx["asset_sha256"]["product"]
                     row["native_image_sha256"] = ctx["image_sha256"]
                     selected = ctx["existing_review"]
@@ -86,7 +93,7 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
                             row["action"] = "人工复核不确定的字段；这些字段不参与评分"
                         else:
                             try:
-                                report = verified_report(poster.name, version, "paddle")
+                                report = verified_report(poster.name, version, "paddle", variant=variant)
                             except FileNotFoundError:
                                 row["status"] = "OCR_MISSING"
                                 row["action"] = "对原生 4:5 图片手动执行 PaddleOCR 验收"
@@ -119,7 +126,10 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
                                         row["action"] = "OCR 字段或价格区域检查不完整，重新验收"
                                     else:
                                         row["status"] = "READY"
-                                        row["action"] = "可以参与原生 4:5 离线评测"
+                                        row["action"] = (
+                                            "可以参与原生 4:5 离线评测" if variant == VARIANT
+                                            else "本版式证据齐备，经典分栏评分器尚不支持此版式"
+                                        )
                                         identifier = (poster.name, version)
                                         if report.get("ocr_runtime_evidence") == "RECORDED" and isinstance(
                                             report.get("ocr_runtime"), dict
@@ -156,12 +166,15 @@ def audit_trial(reviewer: str, *, batch_scope: dict | None = None) -> tuple[dict
     can_score = bool(ready and with_text and len(ready) == len(labeled)) and not any(
         row["status"] in {"SOURCE_INVALID", "REVIEW_STALE"} for row in rows
     )
+    # The M5d scorer only accepts the classic variant: queue readiness is not a
+    # promise that product-focus images can use classic scoring labels.
+    can_score = can_score and variant == VARIANT
     if chosen is not None:
         can_score = can_score and len(rows) == len(chosen) and all(
             row["status"] == "READY" for row in rows
         )
     summary = {
-        "schema_version": "1.0", "variant_id": "feed_4x5_native",
+        "schema_version": "1.0", "variant_id": variant,
         "reviewer": reviewer, "source": "local_poster_versions",
         "model_invoked": False, "ocr_inference_performed": False,
         "total_versions": len(rows),

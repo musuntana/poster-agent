@@ -48,7 +48,7 @@ uv run --locked python -m app.run_local --reload --port 8000
 
 **M5d 已新增 4:5 原生报告评测：** 对已有原生人工 CSV 与对应成功 PaddleOCR 报告做逐字段 TP/FP/FN/TN、弃判和覆盖率统计；活动价/原价必须同时核对文字及专属坐标，SKU 完整度、构图等仅做人工统计，不伪装为自动模型精度。没有真实报告则拒绝评分。参见 [M5d 评测说明](docs/m5d-native-evaluation.md)。
 
-**M5h 新增本地验收队列：** 在网页右侧点击「刷新本地验收队列」，即可按 M5e 状态查看每张海报最新版本，点击「打开审核」直接使用既有 4:5 预览、M5c 人工审核和 M4c 单独验收。刷新仅读取本地数据，既不运行 OCR，也不自动放行。详见 [M5h 审核队列说明](docs/m5h-local-review-queue.md)。
+**M5h 本地验收队列：** 网页可选择经典分栏或商品主体优先两种 4:5 版式，分别查看最新版本的独立审核与 OCR 状态，并点击「打开审核」进入对应模板。现有 M5d/M5e 评分仅支持经典分栏，商品主体优先的 READY 不表示可用该评分器评分。刷新不运行 OCR，也不自动放行。详见 [M5h 审核队列说明](docs/m5h-local-review-queue.md)。
 
 **M5g 本地商品批量导入：** CLI 与网页均支持 1–100 个 SKU 的全批预检、显式应用、逐 SKU 进度、幂等续跑与 `batch_import_results.json` 证据账本。网页通过本机 API 上传 CSV 与图片，强制本地免费背景；工作台也能只读查看默认 CLI 账本。该功能不执行 OCR，也不虚构真实商品评测成绩。参见 [M5g 本地批量导入](docs/m5g-local-batch-import.md)。
 
