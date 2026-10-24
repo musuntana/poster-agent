@@ -79,6 +79,8 @@ def test_cli_batch_status_rejects_malformed_json_and_non_object_payload(tmp_path
 
     journal.write_text("{broken", encoding="utf-8")
     assert client.get("/api/cli-batches/status").status_code == 422
+    journal.write_bytes(b"\xff\xfe\x80")
+    assert client.get("/api/cli-batches/status").status_code == 422
     journal.write_text(json.dumps(["not", "an", "object"]), encoding="utf-8")
     assert client.get("/api/cli-batches/status").status_code == 422
     journal.write_text(json.dumps({"schema_version": "m5g-1"}), encoding="utf-8")
