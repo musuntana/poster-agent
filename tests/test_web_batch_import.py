@@ -221,7 +221,7 @@ def test_web_batch_ui_exposes_explicit_preflight_apply_and_progress_controls():
     assert "restoreLastBatch" in html
     assert "scheduleBatchPoll" in html
     assert "只有点击生成后才开始处理" in html
-    assert "不会调用 Qwen 生图或 OCR" in html
+    assert "不调用 Qwen 生图或 OCR" in html
 
 def test_batch_status_does_not_overwrite_completion_from_a_stale_running_snapshot(
     monkeypatch, tmp_path,
