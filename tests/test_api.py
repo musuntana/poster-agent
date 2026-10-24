@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app import storage
 from app import image_provider
+from app.schemas import PosterSpec
 import pytest
 
 client = TestClient(app)
