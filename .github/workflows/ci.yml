@@ -58,13 +58,15 @@ jobs:
       - name: Install pinned project Python
         run: uv python install 3.12
       - name: Install Chinese fonts
-        timeout-minutes: 8
+        timeout-minutes: 4
         run: |
           if fc-list :lang=zh 2>/dev/null | grep -q .; then
             echo "CJK fonts are already available on this runner."
           else
             sudo apt-get update
-            sudo apt-get install -y fonts-noto-cjk
+            # The renderer already supports this lightweight Ubuntu font path.
+            # Avoid downloading the 61 MB Noto CJK package on every fresh runner.
+            sudo apt-get install -y --no-install-recommends fonts-wqy-microhei
           fi
       - name: Verify lock and install base + dev environment
         run: |
