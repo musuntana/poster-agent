@@ -234,7 +234,7 @@ def test_variant_aware_queue_rejects_unknown_variants_and_wires_editor():
     assert 'value="feed_4x5_native_product_focus"' in html
     assert "variant='+encodeURIComponent(variant)" in html
     assert "证据齐备（当前评分器不支持）" in html
-    assert "$('channelPreset').value=variant;display(poster)" in html
+    assert "$('channelPreset').value=data.variant_id;display(poster)" in html
 
 
 
