@@ -33,4 +33,4 @@ uv run --locked python -m app.run_local --port 8000
 
 ## 开源发布状态
 
-本仓库当前为 **Public**，但尚未添加 `LICENSE`。公开可见不构成开源许可，也不构成生产级安全保障。维护者仍需核实代码/素材权属、历史提交、Actions 产物与客户素材脱敏情况；详见 [发布清单](docs/open-source-release.md)。
+本仓库当前为 **Public**，根目录已添加 [`LICENSE`](LICENSE)，项目代码声明采用 **Apache License 2.0**。该许可证不自动授予第三方素材、字体、商标或其他无权再许可内容的使用权，也不代表生产级安全保障。正式发布前仍需核实代码/素材权属、历史提交、Actions 产物与客户素材脱敏情况；详见 [发布清单](docs/open-source-release.md)。
