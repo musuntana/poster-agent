@@ -29,6 +29,7 @@ from .native_acceptance_routes import router as native_acceptance_router
 from .native_human_review_routes import router as native_human_review_router
 from .trial_queue_routes import router as trial_queue_router
 from .batch_import_routes import router as batch_import_router
+from .cli_batch_status_routes import router as cli_batch_status_router
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ app.include_router(native_acceptance_router)
 app.include_router(native_human_review_router)
 app.include_router(trial_queue_router)
 app.include_router(batch_import_router)
+app.include_router(cli_batch_status_router)
 MAX_UPLOAD = 10 * 1024 * 1024
 # These limits apply to the *decoded* image, not the compressed upload size.
 # Enforce them BEFORE image.load() to prevent high-memory decompression.
