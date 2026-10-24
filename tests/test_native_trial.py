@@ -538,18 +538,20 @@ def test_same_variant_reviewer_new_batch_cannot_reuse_trial_directory(
     monkeypatch.setenv("POSTER_DATA_DIR", str(tmp_path / "missing-posters"))
     output = tmp_path / "cohort-a"
     first = _synthetic_batch_scope("a", "b")
-    second = _synthetic_batch_scope("c", "d")
+    different_journal = _synthetic_batch_scope("c", "b")
+    different_manifest = _synthetic_batch_scope("a", "d")
     audit = run_trial(REVIEWER, output, batch_scope=first)
     assert audit["source_batch_journal_sha256"] == "a" * 64
     before = _eval_files_snapshot(output)
 
-    with pytest.raises(ValueError, match="批次.*独立目录"):
-        run_trial(REVIEWER, output, batch_scope=second)
-    assert _eval_files_snapshot(output) == before
+    for other_cohort in (different_journal, different_manifest):
+        with pytest.raises(ValueError, match="批次.*独立目录"):
+            run_trial(REVIEWER, output, batch_scope=other_cohort)
+        assert _eval_files_snapshot(output) == before
 
-    with pytest.raises(ValueError, match="批次.*独立目录"):
-        run_trial(REVIEWER, output, batch_scope=second, score=True)
-    assert _eval_files_snapshot(output) == before
+        with pytest.raises(ValueError, match="批次.*独立目录"):
+            run_trial(REVIEWER, output, batch_scope=other_cohort, score=True)
+        assert _eval_files_snapshot(output) == before
 
     # Same immutable cohort remains resumable/re-auditable by the same reviewer.
     repeat = run_trial(REVIEWER, output, batch_scope=first)
