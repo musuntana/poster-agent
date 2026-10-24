@@ -10,7 +10,7 @@ uv run --locked python -m app.run_local --port 8000
 uv run --locked python -m app.run_local --reload --port 8000
 ```
 
-The launcher accepts only numeric loopback addresses such as `127.0.0.1` and `::1`; it rejects `0.0.0.0`, non-loopback addresses, and hostnames. It disables Uvicorn proxy-header trust. As defense in depth, application middleware rejects non-loopback peers and non-local `Host` values, and rejects cross-origin or cross-site write requests. Open the UI at <http://127.0.0.1:8000>. These checks reduce accidental exposure and browser-based request risks, but they are not authentication.
+The launcher accepts only numeric loopback addresses such as `127.0.0.1` and `::1`; it rejects `0.0.0.0`, non-loopback addresses, and hostnames. It disables Uvicorn proxy-header trust. As defense in depth, application middleware rejects non-loopback peers and non-local `Host` values, and rejects cross-origin or cross-site browser requests, including reads that carry browser origin metadata. Open the UI at <http://127.0.0.1:8000>. These checks reduce accidental exposure and browser-based request risks, but they are not authentication.
 
 ## Explicitly unsupported
 
