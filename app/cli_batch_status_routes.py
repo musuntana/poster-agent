@@ -100,6 +100,6 @@ def cli_batch_status() -> dict[str, Any]:
         }
     try:
         state = json.loads(JOURNAL_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=422, detail="M5g 命令行批次账本无法读取") from exc
     return _parse_journal(state)
