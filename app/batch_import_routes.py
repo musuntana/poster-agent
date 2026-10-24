@@ -22,6 +22,8 @@ MAX_BATCH_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_FILES = 200
 _ALLOWED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 _BATCH_ID = re.compile(r"^[0-9a-f]{32}$")
+_BATCH_SHA = re.compile(r"^[0-9a-f]{64}$")
+_BATCH_SKU = re.compile(r"^[A-Za-z0-9_-]{2,64}$")
 _ACTIVE_BATCHES: set[str] = set()
 _ACTIVE_LOCK = threading.Lock()
 
@@ -334,6 +336,85 @@ def apply_batch(batch_id: str, background_tasks: BackgroundTasks):
     background_tasks.add_task(_execute_batch, batch_id)
     return _public_state(batch_dir, state)
 
+
+
+
+def _validated_review_scope(batch_id: str, state: dict, journal: object) -> dict:
+    """Summarize only complete, matching M5g journal records for the review UI."""
+    plan = state.get("plan")
+    if state.get("status") != "COMPLETED":
+        raise HTTPException(status_code=409, detail="当前批次未完成，不能进入整批人工验收")
+    if not isinstance(plan, dict) or not isinstance(journal, dict):
+        raise HTTPException(status_code=409, detail="批次状态与导入账本不一致")
+    expected = plan.get("sku_ids")
+    digest = plan.get("manifest_sha256")
+    if (
+        not isinstance(expected, list)
+        or not 1 <= len(expected) <= 100
+        or any(not isinstance(sku, str) or not _BATCH_SKU.fullmatch(sku)
+               for sku in expected)
+        or len(set(expected)) != len(expected)
+        or not isinstance(digest, str)
+        or not _BATCH_SHA.fullmatch(digest)
+        or journal.get("schema_version") != "m5g-1"
+        or journal.get("mode") != "apply"
+        or journal.get("completed") is not True
+        or journal.get("manifest_sha256") != digest
+        or journal.get("expected_sku_ids") != expected
+        or type(journal.get("expected_sku_count")) is not int
+        or journal["expected_sku_count"] != len(expected)
+    ):
+        raise HTTPException(status_code=409, detail="批次状态与导入账本不一致")
+    rows = journal.get("rows")
+    if not isinstance(rows, dict) or set(rows) != set(expected):
+        raise HTTPException(status_code=409, detail="完成批次的 SKU 清单不完整")
+    scoped = []
+    poster_ids = set()
+    for sku in expected:
+        item = rows[sku]
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=409, detail="批次海报记录格式不合法")
+        poster_id = item.get("poster_id")
+        if (
+            not isinstance(poster_id, str)
+            or not _BATCH_ID.fullmatch(poster_id)
+            or poster_id in poster_ids
+            or type(item.get("version")) is not int
+            or item["version"] != 1
+            or not isinstance(item.get("product_sha256"), str)
+            or not _BATCH_SHA.fullmatch(item["product_sha256"])
+            or not isinstance(item.get("request_sha256"), str)
+            or not _BATCH_SHA.fullmatch(item["request_sha256"])
+        ):
+            raise HTTPException(status_code=409, detail="批次海报记录缺失、重复或格式非法")
+        poster_ids.add(poster_id)
+        scoped.append({"sku_id": sku, "poster_id": poster_id})
+    return {
+        "batch_id": batch_id,
+        "completed": True,
+        "total_skus": len(expected),
+        "manifest_sha256": digest,
+        "rows": scoped,
+        "read_only": True,
+        "automatically_approved": False,
+    }
+
+
+@router.get("/{batch_id}/review-scope")
+def batch_review_scope(batch_id: str):
+    """Read-only handoff to the existing review queue without uploading the journal."""
+    batch_dir = _batch_dir(batch_id)
+    state = _read_state(batch_dir)
+    if state.get("status") != "COMPLETED":
+        raise HTTPException(status_code=409, detail="当前批次未完成，不能进入整批人工验收")
+    journal_path = batch_dir / "batch_import_results.json"
+    if journal_path.is_symlink():
+        raise HTTPException(status_code=409, detail="批次账本不能是符号链接")
+    try:
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise HTTPException(status_code=409, detail="批次账本缺失或损坏") from exc
+    return _validated_review_scope(batch_id, state, journal)
 
 @router.get("/{batch_id}")
 def get_batch(batch_id: str):
