@@ -12,6 +12,7 @@ from collections import Counter
 from fastapi import APIRouter, HTTPException, Query
 
 from app import storage
+from app.native_acceptance import NativeVariant, VARIANT
 from evals.native_trial import audit_trial
 
 router = APIRouter(prefix="/api/trials", tags=["local-trial-queue"])
@@ -32,6 +33,7 @@ PRIORITY = {
 @router.get("/review-queue")
 def local_native_review_queue(
     reviewer: str = Query(default="local-operator", min_length=2, max_length=40),
+    variant: NativeVariant = VARIANT,
 ):
     """Return latest poster versions for a chosen alias; no writes, no OCR runs.
 
@@ -39,7 +41,7 @@ def local_native_review_queue(
     means enough evidence exists for *offline scoring*, not ad publication.
     """
     try:
-        summary, rows = audit_trial(reviewer)
+        summary, rows = audit_trial(reviewer, variant=variant)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -72,7 +74,7 @@ def local_native_review_queue(
             "ocr_text_labels": row["ocr_text_labels"],
             "native_image_url": (
                 f"/api/posters/{pid}/versions/{row['version']}"
-                "/exports/feed_4x5_native"
+                f"/exports/{variant}"
             ),
             "poster_url": f"/api/posters/{pid}",
         })
@@ -82,7 +84,7 @@ def local_native_review_queue(
     counts = Counter(item["status"] for item in result)
     return {
         "reviewer": reviewer,
-        "variant_id": "feed_4x5_native",
+        "variant_id": variant,
         "read_only": True, "runs_ocr": False, "automatically_approved": False,
         "total_posters": len(result),
         "total_versions_in_cohort": summary["total_versions"],
