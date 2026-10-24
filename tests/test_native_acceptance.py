@@ -11,7 +11,7 @@ from PIL import Image
 from app import storage
 from app.main import app
 from app.ocr_provider import OCRUnavailable
-from app.native_acceptance import NATIVE_ZONES
+from app.native_acceptance import NATIVE_ZONES, PRODUCT_FOCUS_ZONES
 
 client = TestClient(app)
 
@@ -176,3 +176,80 @@ def test_invalid_mode_or_version_rejected(tmp_path, monkeypatch, product_bytes):
     assert client.get(_endpoint(pid)+"?ocr_mode=bad").status_code == 422
     assert client.get(_endpoint(pid, 99)).status_code == 404
     assert client.post(_endpoint(pid, 99), json={"ocr_mode": "none"}).status_code == 404
+
+
+PRODUCT_FOCUS = "feed_4x5_native_product_focus"
+
+
+def _variant_endpoint(pid, variant=PRODUCT_FOCUS, version=1):
+    return f"/api/posters/{pid}/versions/{version}/exports/{variant}/acceptance"
+
+
+def _product_focus_ocr(path):
+    with Image.open(path) as picture:
+        assert picture.format == "PNG"
+        assert picture.size == (1080, 1350)
+    return [
+        {"text": "电动牙刷促销", "score": .99, "bbox": [68, 786, 410, 840]},
+        {"text": "限时福利", "score": .99, "bbox": [68, 910, 245, 940]},
+        {"text": "¥199", "score": .99, "bbox": [65, 1010, 291, 1085]},
+        {"text": "原价 ¥399", "score": .99, "bbox": [69, 1134, 319, 1165]},
+        {"text": "立即购买", "score": .99, "bbox": [650, 1138, 940, 1185]},
+    ]
+
+
+def test_product_focus_acceptance_is_independent_and_hash_bound(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    url = _variant_endpoint(pid)
+    response = client.post(url, json={"ocr_mode": "none"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["variant_id"] == PRODUCT_FOCUS
+    assert report["ocr_status"] == "NOT_RUN"
+    assert report["auto_checks"] == "INCOMPLETE"
+    assert report["verdict"] == "REVIEW_REQUIRED"
+    assert report["inherits_square_acceptance"] is False
+    assert report["requires_human_review"] is True
+
+    export = client.get(
+        f"/api/posters/{pid}/versions/1/exports/{PRODUCT_FOCUS}"
+    )
+    assert export.status_code == 200
+    assert export.headers["x-layout-template"] == "product_focus"
+    assert report["native_image_sha256"] == hashlib.sha256(export.content).hexdigest()
+    checks = _by_name(report)
+    assert checks["ocr_price_position"]["status"] == "UNVERIFIED"
+    assert checks["ocr_price_position"]["evidence"]["zone_xyxy"] == list(
+        PRODUCT_FOCUS_ZONES["price"]
+    )
+    assert client.get(url).json()["native_image_sha256"] == report["native_image_sha256"]
+    assert client.get(_endpoint(pid)).status_code == 404
+
+
+def test_product_focus_ocr_checks_use_product_focus_price_coordinates(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    monkeypatch.setattr("app.native_acceptance.recognize", _product_focus_ocr)
+    response = client.post(_variant_endpoint(pid), json={"ocr_mode": "paddle"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    checks = _by_name(report)
+    assert report["variant_id"] == PRODUCT_FOCUS
+    assert checks["ocr_price_position"]["status"] == "PASS"
+    assert checks["ocr_original_price_position"]["status"] == "PASS"
+    assert checks["ocr_price_position"]["evidence"]["zone_xyxy"] == list(
+        PRODUCT_FOCUS_ZONES["price"]
+    )
+
+
+def test_native_acceptance_rejects_unknown_layout_variant(
+    tmp_path, monkeypatch, product_bytes,
+):
+    pid = _create(tmp_path, monkeypatch, product_bytes)
+    assert client.post(
+        _variant_endpoint(pid, variant="feed_4x5_native_fake"),
+        json={"ocr_mode": "none"},
+    ).status_code == 422

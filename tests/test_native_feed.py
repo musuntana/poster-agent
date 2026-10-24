@@ -215,8 +215,10 @@ def test_product_focus_export_is_listed_and_does_not_mutate_source(
     assert client.get(f"/api/posters/{pid}/versions/1/exports/unknown_native").status_code == 422
 
 
-def test_ui_labels_product_focus_as_a_separate_unverified_layout():
+def test_ui_exposes_product_focus_with_separate_acceptance_boundary():
     response = client.get("/")
     assert response.status_code == 200
     assert 'value="feed_4x5_native_product_focus"' in response.text
-    assert "此版式尚未接入当前 OCR / 人工验收流程" in response.text
+    assert "商品主体优先版式：已接入独立 OCR / 规则检查" in response.text
+    assert "人工审核流程尚未接入" in response.text
+    assert "exports/'+variant+'/acceptance" in response.text

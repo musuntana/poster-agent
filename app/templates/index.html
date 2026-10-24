@@ -136,7 +136,7 @@
 </select></div>
 <div class="actions"><button id="checkNative" class="secondary" type="button" disabled>检查当前 4:5 导出</button><span id="nativeGateStatus" class="tip">选择原生 4:5 并生成海报后可检查。</span></div>
 <pre id="nativeGateResult" style="white-space:pre-wrap;overflow-wrap:anywhere;background:#071424;padding:12px;border-radius:9px;font-size:12px;max-height:240px;overflow:auto">未检查该导出版本</pre>
-<p class="tip">此报告只适用于 1080×1350 原生版，不会继承方形版的质量结论。即使文字 OCR PASS，商品保真、品牌与投放规范也必须人工检查。</p>
+<p class="tip">每种 1080×1350 原生版式均使用独立报告，不继承方形版或其他版式的质量结论。即使文字 OCR PASS，商品保真、品牌与投放规范也必须人工检查。</p>
 <div id="nativeHumanPanel">
   <h3>4:5 原生海报人工验收</h3>
   <p class="tip">请对照上面的原生导出预览检查商品是否完整、文字是否可读、构图与具体文案。每条标签绑定当前 4:5 PNG、商品与背景 SHA-256。此审核与下方方形版标注完全分开。</p>
@@ -747,43 +747,45 @@ function updateChannelExport(){
       : '安全缩放：方形原图完整保留，背景延展，不重新排版文字。';
   const isBaselineNative=preset==='feed_4x5_native';
   const isProductFocus=preset==='feed_4x5_native_product_focus';
-  $('checkNative').disabled=!isBaselineNative;
-  $('nativeOcrMode').disabled=!isBaselineNative;
+  const isNativeLayout=isBaselineNative||isProductFocus;
+  $('checkNative').disabled=!isNativeLayout;
+  $('nativeOcrMode').disabled=!isNativeLayout;
   $('nativeGateStatus').textContent=isProductFocus
-    ? '此版式尚未接入当前 OCR / 人工验收流程，不能继承其他版式结论。'
+    ? '商品主体优先版式：已接入独立 OCR / 规则检查；人工审核流程尚未接入。'
     : '尚未检查当前 v'+current.version+' 的原生 4:5 导出';
   $('nativeGateResult').textContent=isProductFocus
-    ? '未验收此版式；请单独进行视觉与文案审核。'
+    ? '尚未检查此版式；报告不会继承其他版式结论，且不代表视觉质量或投放审核通过。'
     : '未检查该导出版本';
   loadNativeReviewContext();
 }
 $('channelPreset').addEventListener('change',updateChannelExport);
 $('checkNative').addEventListener('click', async () => {
-  if(!current || $('channelPreset').value!=='feed_4x5_native') return;
+  const variant=$('channelPreset').value;
+  if(!current || !['feed_4x5_native','feed_4x5_native_product_focus'].includes(variant)) return;
   const id=current.poster_id, version=current.version;
   $('checkNative').disabled=true;
   $('nativeGateStatus').textContent='正在核对原生导出（真实 OCR 可能需要加载模型）…';
   try {
-    const res=await fetch('/api/posters/'+id+'/versions/'+version+'/exports/feed_4x5_native/acceptance',{
+    const res=await fetch('/api/posters/'+id+'/versions/'+version+'/exports/'+variant+'/acceptance',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ocr_mode:$('nativeOcrMode').value})
     });
     const report=await res.json();
     if(!res.ok) throw Error(errorText(report));
     if(!current || current.poster_id!==id || current.version!==version ||
-       $('channelPreset').value!=='feed_4x5_native') return;
-    $('nativeGateStatus').textContent='原生 4:5：'+report.auto_checks+' · OCR：'+report.ocr_status+' · '+report.verdict;
+       $('channelPreset').value!==variant) return;
+    $('nativeGateStatus').textContent=(variant==='feed_4x5_native_product_focus'?'商品主体优先 4:5':'经典原生 4:5')+'：'+report.auto_checks+' · OCR：'+report.ocr_status+' · '+report.verdict;
     $('nativeGateStatus').className='tip '+(report.auto_checks==='FAIL'?'bad':'');
     $('nativeGateResult').textContent=report.checks.map(c=>
       c.status+' | '+c.name+'：'+c.detail).join('\n')+
       '\n\n图片 SHA-256：'+report.native_image_sha256+
-      '\n独立报告：未继承方形版验收结果；仍需人工确认。';
+      '\n独立报告：未继承方形版验收结果；'+(variant==='feed_4x5_native_product_focus'?'该版式尚未接入人工标注流程。':'仍需人工确认。');
   }catch(e){
     $('nativeGateStatus').textContent='验收失败：'+e.message;
     $('nativeGateStatus').className='tip bad';
   }finally{
     if(current?.poster_id===id && current?.version===version &&
-       $('channelPreset').value==='feed_4x5_native') $('checkNative').disabled=false;
+       $('channelPreset').value===variant) $('checkNative').disabled=false;
   }
 });
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app import storage
 from app.native_acceptance import (
-    StaleNativeEvidence, evaluate_native, report_path, verified_report
+    NativeVariant, StaleNativeEvidence, evaluate_native, report_path, verified_report,
 )
 
 router = APIRouter(prefix="/api/posters", tags=["native-quality"])
@@ -19,13 +19,15 @@ class NativeQualityOptions(BaseModel):
     ocr_mode: Literal["none", "paddle"] = "none"
 
 
-@router.post("/{poster_id}/versions/{version}/exports/feed_4x5_native/acceptance")
-def run_native_acceptance(poster_id: str, version: int, options: NativeQualityOptions):
+@router.post("/{poster_id}/versions/{version}/exports/{variant}/acceptance")
+def run_native_acceptance(
+    poster_id: str, version: int, variant: NativeVariant, options: NativeQualityOptions,
+):
     try:
-        report = evaluate_native(poster_id, version, options.ocr_mode)
+        report = evaluate_native(poster_id, version, options.ocr_mode, variant)
         with storage.LOCK:
             storage._atomic_json(
-                report_path(poster_id, version, options.ocr_mode), report
+                report_path(poster_id, version, options.ocr_mode, variant), report
             )
         return report
     except FileNotFoundError as exc:
@@ -34,12 +36,13 @@ def run_native_acceptance(poster_id: str, version: int, options: NativeQualityOp
         raise HTTPException(status_code=422, detail="无法完成原生 4:5 验收，请检查源素材和布局配置") from exc
 
 
-@router.get("/{poster_id}/versions/{version}/exports/feed_4x5_native/acceptance")
+@router.get("/{poster_id}/versions/{version}/exports/{variant}/acceptance")
 def read_native_acceptance(
-    poster_id: str, version: int, ocr_mode: Literal["none", "paddle"] = "none"
+    poster_id: str, version: int, variant: NativeVariant,
+    ocr_mode: Literal["none", "paddle"] = "none",
 ):
     try:
-        return verified_report(poster_id, version, ocr_mode)
+        return verified_report(poster_id, version, ocr_mode, variant)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="此导出版本尚无验收记录") from exc
     except StaleNativeEvidence as exc:
