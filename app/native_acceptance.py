@@ -18,15 +18,28 @@ from PIL import Image
 
 from app import storage
 from app.acceptance import Check, _brand_terms, _field_checks
-from app.native_layout import HEIGHT, WIDTH, render_native_feed
+from app.native_layout import (
+    HEIGHT, WIDTH, render_native_feed, render_native_product_focus,
+)
 from app.ocr_price_layout import assess_price_zones
 from app.ocr_provider import OCRExecutionError, OCRUnavailable, recognize
 from app.schemas import PosterSpec, price_text
 
 VARIANT = "feed_4x5_native"
+PRODUCT_FOCUS_VARIANT = "feed_4x5_native_product_focus"
+NativeVariant = Literal["feed_4x5_native", "feed_4x5_native_product_focus"]
+NATIVE_VARIANTS = (VARIANT, PRODUCT_FOCUS_VARIANT)
 NATIVE_ZONES = {
     "price": (54, 866, 515, 1014),
     "original_price": (54, 1014, 515, 1097),
+}
+PRODUCT_FOCUS_ZONES = {
+    "price": (54, 990, 600, 1120),
+    "original_price": (54, 1110, 600, 1200),
+}
+NATIVE_ZONES_BY_VARIANT = {
+    VARIANT: NATIVE_ZONES,
+    PRODUCT_FOCUS_VARIANT: PRODUCT_FOCUS_ZONES,
 }
 MODE = Literal["none", "paddle"]
 
@@ -54,14 +67,27 @@ def _sources(poster_id: str, version: int) -> tuple[PosterSpec, bytes, dict, byt
     return spec, spec_bytes, asset_digest, source_png
 
 
-def _render(poster_id: str, spec: PosterSpec) -> bytes:
+def _render(
+    poster_id: str, spec: PosterSpec, variant: NativeVariant = VARIANT,
+) -> bytes:
     product, logo, background = storage.read_assets(poster_id)
-    return render_native_feed(spec, product, logo, background)
+    if variant == VARIANT:
+        return render_native_feed(spec, product, logo, background)
+    if variant == PRODUCT_FOCUS_VARIANT:
+        return render_native_product_focus(spec, product, logo, background)
+    raise ValueError("不支持的原生版式")
 
 
-def report_path(poster_id: str, version: int, mode: MODE) -> Path:
+def report_path(
+    poster_id: str, version: int, mode: MODE, variant: NativeVariant = VARIANT,
+) -> Path:
     storage.version_path(poster_id, version)
-    return storage.poster_dir(poster_id) / "versions" / f"v{version}.{VARIANT}.acceptance.{mode}.json"
+    if variant not in NATIVE_VARIANTS:
+        raise ValueError("不支持的原生版式")
+    return (
+        storage.poster_dir(poster_id) / "versions"
+        / f"v{version}.{variant}.acceptance.{mode}.json"
+    )
 
 
 def _rule_checks(spec: PosterSpec, image: Image.Image, asset_hashes: dict) -> list[Check]:
@@ -100,9 +126,14 @@ def _rule_checks(spec: PosterSpec, image: Image.Image, asset_hashes: dict) -> li
     return checks
 
 
-def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
+def evaluate_native(
+    poster_id: str, version: int, ocr_mode: MODE,
+    variant: NativeVariant = VARIANT,
+) -> dict:
+    if variant not in NATIVE_VARIANTS:
+        raise ValueError("不支持的原生版式")
     spec, spec_bytes, assets, source_png = _sources(poster_id, version)
-    png = _render(poster_id, spec)
+    png = _render(poster_id, spec, variant)
     with Image.open(io.BytesIO(png)) as image:
         image.load()
         dimension = image.copy()
@@ -130,14 +161,14 @@ def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
         _rule_checks(spec, dimension, assets)
         + _field_checks(spec, ocr_status, lines)
         + [Check.model_validate(v) for v in assess_price_zones(
-            spec, ocr_status, lines, zones=NATIVE_ZONES, layout_size=(WIDTH, HEIGHT),
+            spec, ocr_status, lines, zones=NATIVE_ZONES_BY_VARIANT[variant], layout_size=(WIDTH, HEIGHT),
         )]
     )
     states = {check.status for check in checks}
     auto_checks = ("FAIL" if "FAIL" in states else
                    "INCOMPLETE" if "UNVERIFIED" in states else "PASS")
     report = {
-        "poster_id": poster_id, "version": version, "variant_id": VARIANT,
+        "poster_id": poster_id, "version": version, "variant_id": variant,
         "source_image_sha256": _sha(source_png),
         "spec_sha256": _sha(spec_bytes),
         "asset_sha256": assets,
@@ -156,16 +187,20 @@ def evaluate_native(poster_id: str, version: int, ocr_mode: MODE) -> dict:
     return report
 
 
-def verified_report(poster_id: str, version: int, mode: MODE) -> dict:
-    report = json.loads(report_path(poster_id, version, mode).read_text(encoding="utf-8"))
+def verified_report(
+    poster_id: str, version: int, mode: MODE, variant: NativeVariant = VARIANT,
+) -> dict:
+    report = json.loads(
+        report_path(poster_id, version, mode, variant).read_text(encoding="utf-8")
+    )
     spec, spec_bytes, assets, original = _sources(poster_id, version)
     if report.get("poster_id") != poster_id or report.get("version") != version or \
-            report.get("variant_id") != VARIANT or report.get("ocr_mode") != mode:
+            report.get("variant_id") != variant or report.get("ocr_mode") != mode:
         raise StaleNativeEvidence("报告不属于当前海报/版本/导出模式")
     if report.get("source_image_sha256") != _sha(original) or \
             report.get("spec_sha256") != _sha(spec_bytes) or \
             report.get("asset_sha256") != assets:
         raise StaleNativeEvidence("保存的海报素材或规格已发生变化，请重新验收")
-    if report.get("native_image_sha256") != _sha(_render(poster_id, spec)):
+    if report.get("native_image_sha256") != _sha(_render(poster_id, spec, variant)):
         raise StaleNativeEvidence("原生布局的实际像素与已保存报告不同，请重新验收")
     return report
