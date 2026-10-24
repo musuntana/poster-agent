@@ -103,6 +103,26 @@
 <progress id="batchProgress" max="100" value="0" aria-label="批量生成进度"></progress>
 <div id="batchPlanSummary" class="tip"></div>
 <div id="batchRows" class="execution-history" aria-live="polite"></div>
+<div class="mt" id="batchHistoryPanel">
+  <h3>历史网页批次</h3>
+  <p class="tip">选择旧批次后可查看原有进度、续跑未完成任务或进入人工审核；历史浏览不会自动删除原图或评测账本。</p>
+  <div class="actions">
+    <label for="batchHistoryFilter">状态</label>
+    <select id="batchHistoryFilter" aria-label="筛选历史批次">
+      <option value="">全部</option>
+      <option value="COMPLETED">已完成</option>
+      <option value="FAILED">失败</option>
+      <option value="INTERRUPTED">已中断</option>
+      <option value="READY">待生成</option>
+      <option value="RUNNING">执行中</option>
+    </select>
+    <button id="refreshBatchHistory" class="secondary" type="button">刷新历史</button>
+    <button id="batchHistoryPrev" class="secondary" type="button" disabled>上一页</button>
+    <button id="batchHistoryNext" class="secondary" type="button" disabled>下一页</button>
+  </div>
+  <p id="batchHistoryInfo" class="tip" aria-live="polite">尚未加载历史批次</p>
+  <div id="batchHistoryItems" class="execution-history" aria-live="polite"></div>
+</div>
 </section>
 <section id="cliBatchJournal" style="margin-bottom:24px">
 <h3>命令行批次账本状态（M5g）</h3>
@@ -1291,8 +1311,10 @@ $('preflightBatch').addEventListener('click',async()=>{
     const response=await fetch('/api/batches',{method:'POST',body});
     const state=await response.json();
     if(!response.ok)throw Error(errorText(state));
+    batchHistorySelectionRequest+=1;
     currentBatchId=state.batch_id;
     renderBatchState(state);
+    loadBatchHistory();
   }catch(err){
     $('batchStatus').textContent='批次预检失败：'+err.message;
     $('batchStatus').className='tip bad';
@@ -1356,6 +1378,99 @@ $('reviewCurrentBatch').addEventListener('click',async()=>{
     if(currentBatchId===batchId)button.disabled=lastBatchStatus!=='COMPLETED';
   }
 });
+
+const batchHistoryPaging={limit:10,offset:0};
+let batchHistoryRequest=0;
+let batchHistorySelectionRequest=0;
+async function selectHistoricalBatch(batchId){
+  const request=++batchHistorySelectionRequest;
+  $('batchHistoryInfo').textContent='正在打开历史批次…';
+  try{
+    const response=await fetch('/api/batches/'+encodeURIComponent(batchId));
+    const state=await response.json();
+    if(request!==batchHistorySelectionRequest)return;
+    if(!response.ok)throw Error(errorText(state));
+    if(batchPollTimer){clearTimeout(batchPollTimer);batchPollTimer=null;}
+    batchPollGeneration+=1; // Invalidate polling of the old selected batch.
+    if(currentBatchId!==batchId){
+      batchReviewScope=null;
+      $('batchReviewScopeStatus').textContent=
+        '已切换历史批次。原审核筛选已清除；请为当前批次重新点击「审核当前批次」。';
+      if(lastReviewQueueData)renderReviewQueue(lastReviewQueueData);
+    }
+    currentBatchId=batchId;
+    renderBatchState(state);
+    $('batchHistoryInfo').textContent='已打开批次 '+batchId.slice(0,10)+'…';
+    await loadBatchHistory();
+  }catch(err){
+    if(request===batchHistorySelectionRequest){
+      $('batchHistoryInfo').textContent='打开批次失败：'+err.message;
+    }
+  }
+}
+async function loadBatchHistory(){
+  const request=++batchHistoryRequest;
+  const offset=batchHistoryPaging.offset,limit=batchHistoryPaging.limit;
+  const status=$('batchHistoryFilter').value;
+  const params=new URLSearchParams({limit:String(limit),offset:String(offset)});
+  if(status)params.set('status',status);
+  $('batchHistoryPrev').disabled=true;
+  $('batchHistoryNext').disabled=true;
+  $('batchHistoryInfo').textContent='正在读取历史批次…';
+  try{
+    const response=await fetch('/api/batches?'+params.toString());
+    const data=await response.json();
+    if(request!==batchHistoryRequest)return;
+    if(!response.ok)throw Error(errorText(data));
+    const host=$('batchHistoryItems');
+    host.replaceChildren();
+    for(const item of data.items||[]){
+      const row=document.createElement('div');
+      row.className='execution-row';
+      const summary=document.createElement('span');
+      summary.className='summary';
+      summary.textContent=batchStatusLabel(item.status)+' · '+item.processed+'/'+item.total+
+        ' SKU · '+item.updated_at+' · '+item.batch_id.slice(0,10)+'…';
+      row.appendChild(summary);
+      const open=document.createElement('button');
+      open.className='secondary';open.type='button';
+      open.disabled=currentBatchId===item.batch_id;
+      open.textContent=open.disabled?'当前批次':'查看批次';
+      open.addEventListener('click',()=>selectHistoricalBatch(item.batch_id));
+      row.appendChild(open);
+      host.appendChild(row);
+    }
+    if(!(data.items||[]).length){
+      host.textContent=offset?'本页无批次，请返回上一页':'暂无符合条件的历史批次';
+    }
+    $('batchHistoryPrev').disabled=offset===0;
+    $('batchHistoryNext').disabled=!data.has_more||offset+limit>10000;
+    const range=(data.items||[]).length
+      ? '第 '+(offset+1)+'–'+(offset+data.items.length)+' 个'
+      : '当前页无记录';
+    $('batchHistoryInfo').textContent=range+
+      (data.has_more?'，还有更多':'')+
+      (data.skipped_invalid?' · 跳过 '+data.skipped_invalid+' 个损坏批次':'');
+  }catch(err){
+    if(request!==batchHistoryRequest)return;
+    $('batchHistoryInfo').textContent='读取历史批次失败：'+err.message;
+    $('batchHistoryPrev').disabled=offset===0;
+  }
+}
+$('refreshBatchHistory').addEventListener('click',loadBatchHistory);
+$('batchHistoryFilter').addEventListener('change',()=>{
+  batchHistoryPaging.offset=0;
+  loadBatchHistory();
+});
+$('batchHistoryPrev').addEventListener('click',()=>{
+  batchHistoryPaging.offset=Math.max(0,batchHistoryPaging.offset-batchHistoryPaging.limit);
+  loadBatchHistory();
+});
+$('batchHistoryNext').addEventListener('click',()=>{
+  batchHistoryPaging.offset=Math.min(10000,batchHistoryPaging.offset+batchHistoryPaging.limit);
+  loadBatchHistory();
+});
+loadBatchHistory();
 
 (async function restoreLastBatch(){
   const saved=localStorage.getItem(BATCH_STORAGE_KEY);

@@ -338,3 +338,129 @@ def test_web_batch_handoff_ui_reuses_existing_review_queue():
     assert "batchReviewScope={ids:" in html
     assert "loadReviewQueue" in html
     assert "当前批次已完成" in html
+
+
+def test_web_batch_history_listing_filters_pages_without_exposing_inputs(
+    tmp_path, monkeypatch,
+):
+    first = _upload_batch(monkeypatch, tmp_path)
+    second = _upload_batch(monkeypatch, tmp_path)
+    third = _upload_batch(monkeypatch, tmp_path)
+    assert all(r.status_code == 201 for r in (first, second, third))
+    ids = [r.json()["batch_id"] for r in (first, second, third)]
+    root = tmp_path / "batch-root"
+    for index, batch_id in enumerate(ids):
+        status_path = root / batch_id / "batch_status.json"
+        state = json.loads(status_path.read_text(encoding="utf-8"))
+        state["updated_at"] = f"2026-10-24T0{index}:00:00+00:00"
+        state["status"] = ["READY", "COMPLETED", "FAILED"][index]
+        state["processed"] = index
+        status_path.write_text(json.dumps(state), encoding="utf-8")
+
+    response = client.get("/api/batches?limit=2")
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert page["limit"] == 2 and page["offset"] == 0
+    assert page["has_more"] is True
+    assert [item["batch_id"] for item in page["items"]] == ids[::-1][:2]
+    assert [item["status"] for item in page["items"]] == ["FAILED", "COMPLETED"]
+    assert all(
+        set(item) == {
+            "batch_id", "status", "created_at", "updated_at", "processed", "total"
+        } for item in page["items"]
+    )
+    assert "sku-one" not in response.text
+    assert "manifest_sha256" not in response.text
+    assert str(tmp_path) not in response.text
+
+    last = client.get("/api/batches?limit=2&offset=2").json()
+    assert last["has_more"] is False
+    assert [item["batch_id"] for item in last["items"]] == ids[:1]
+    only_completed = client.get("/api/batches?status=COMPLETED").json()
+    assert [item["batch_id"] for item in only_completed["items"]] == ids[1:2]
+    assert only_completed["has_more"] is False
+
+
+def test_web_batch_history_skips_corrupt_and_symlinked_directories(
+    tmp_path, monkeypatch,
+):
+    first = _upload_batch(monkeypatch, tmp_path)
+    assert first.status_code == 201
+    root = tmp_path / "batch-root"
+    valid = first.json()["batch_id"]
+    broken = root / ("f" * 32)
+    broken.mkdir()
+    (broken / "batch_status.json").write_text("{broken", encoding="utf-8")
+    wrong_type = root / ("d" * 32)
+    wrong_type.mkdir()
+    state = json.loads((root / valid / "batch_status.json").read_text(encoding="utf-8"))
+    state["batch_id"] = wrong_type.name
+    state["status"] = []
+    (wrong_type / "batch_status.json").write_text(json.dumps(state), encoding="utf-8")
+    outside = tmp_path / "unrelated"
+    outside.mkdir()
+    (outside / "private.txt").write_text("do not read", encoding="utf-8")
+    (root / ("e" * 32)).symlink_to(outside, target_is_directory=True)
+    (root / "notes.txt").write_text("unrelated", encoding="utf-8")
+
+    response = client.get("/api/batches")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert [item["batch_id"] for item in data["items"]] == [valid]
+    assert data["skipped_invalid"] == 2
+    assert "private.txt" not in response.text
+    assert (outside / "private.txt").read_text() == "do not read"
+
+
+def test_web_batch_history_reports_abandoned_running_without_mutating_disk(
+    tmp_path, monkeypatch,
+):
+    response = _upload_batch(monkeypatch, tmp_path)
+    assert response.status_code == 201
+    batch_id = response.json()["batch_id"]
+    status_path = tmp_path / "batch-root" / batch_id / "batch_status.json"
+    original = json.loads(status_path.read_text(encoding="utf-8"))
+    original["status"] = "RUNNING"
+    status_path.write_text(json.dumps(original), encoding="utf-8")
+    before = status_path.read_bytes()
+
+    listing = client.get("/api/batches?status=INTERRUPTED")
+    assert listing.status_code == 200
+    assert [(x["batch_id"], x["status"]) for x in listing.json()["items"]] == [
+        (batch_id, "INTERRUPTED")
+    ]
+    assert status_path.read_bytes() == before
+    assert client.get("/api/batches?status=RUNNING").json()["items"] == []
+
+
+def test_web_batch_history_validates_page_and_status_and_does_not_create_root(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setenv("POSTER_BATCH_DIR", str(tmp_path / "not-created"))
+    good = client.get("/api/batches")
+    assert good.status_code == 200
+    assert good.json()["items"] == []
+    assert good.json()["has_more"] is False
+    assert not (tmp_path / "not-created").exists()
+    for params in (
+        "limit=0", "limit=51", "offset=-1", "offset=10001",
+        "status=UNKNOWN", "status=FAILED%27%20OR%201%3D1",
+    ):
+        response = client.get("/api/batches?" + params)
+        assert response.status_code == 422, (params, response.text)
+
+
+def test_web_batch_history_ui_can_switch_to_older_batches_without_deletion():
+    page = client.get("/")
+    assert page.status_code == 200
+    html = page.text
+    for marker in (
+        'id="batchHistoryFilter"', 'id="refreshBatchHistory"',
+        'id="batchHistoryPrev"', 'id="batchHistoryNext"',
+        'id="batchHistoryItems"', 'id="batchHistoryInfo"',
+    ):
+        assert marker in html
+    assert "function selectHistoricalBatch" in html
+    assert "async function loadBatchHistory" in html
+    assert "batchReviewScope=null" in html
+    assert "不会自动删除原图或评测账本" in html

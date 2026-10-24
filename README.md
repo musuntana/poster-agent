@@ -50,7 +50,7 @@ uv run --locked python -m app.run_local --reload --port 8000
 
 **M5h 本地验收队列：** 网页可选择经典分栏或商品主体优先两种 4:5 版式，分别查看最新版本的独立审核与 OCR 状态，并点击「打开审核」进入对应模板。M5d/M5e 可按指定版式独立评分，不能交叉复用人工标签和 OCR 结果；评测输出目录会绑定版式、审核员与 M5g 批次身份，阻止跨实验误覆盖旧证据。READY 不表示广告可投放。刷新不运行 OCR，也不自动放行。详见 [M5h 审核队列说明](docs/m5h-local-review-queue.md)。
 
-**M5g 本地商品批量导入：** CLI 与网页均支持 1–100 个 SKU 的全批预检、显式应用、逐 SKU 进度、幂等续跑与 `batch_import_results.json` 证据账本。网页通过本机 API 上传 CSV 与图片，强制本地免费背景；工作台也能只读查看默认 CLI 账本。该功能不执行 OCR，也不虚构真实商品评测成绩。参见 [M5g 本地批量导入](docs/m5g-local-batch-import.md)。
+**M5g 本地商品批量导入（含历史批次浏览）：** CLI 与网页均支持 1–100 个 SKU 的全批预检、显式应用、逐 SKU 进度、幂等续跑与 `batch_import_results.json` 证据账本。网页通过本机 API 上传 CSV 与图片，强制本地免费背景；工作台也能只读查看默认 CLI 账本。该功能不执行 OCR，也不虚构真实商品评测成绩。参见 [M5g 本地批量导入](docs/m5g-local-batch-import.md)。
 
 **M5f 已加固试验证据：** 原生 OCR 报告记录运行适配器、PaddleOCR/PaddlePaddle 包版本及架构（**仅诊断，不可当作真实模型执行证明**）；每次盘点或评分会把旧指标归档到 `history/`，通过 `latest_score_status` 避免旧 F1 被当成最新结果。参见 [M5f 试验防混淆说明](docs/m5f-evidence-run-safety.md)。
 
