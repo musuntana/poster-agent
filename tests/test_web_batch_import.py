@@ -250,3 +250,91 @@ def test_batch_status_does_not_overwrite_completion_from_a_stale_running_snapsho
     assert response.json()["status"] == "COMPLETED"
     assert json.loads(status_path.read_text(encoding="utf-8"))["status"] == "COMPLETED"
 
+
+
+
+def test_web_batch_review_scope_rejects_unfinished_and_returns_exact_completed_cohort(
+    monkeypatch, tmp_path,
+):
+    staged = _upload_batch(monkeypatch, tmp_path)
+    assert staged.status_code == 201, staged.text
+    batch_id = staged.json()["batch_id"]
+    url = f"/api/batches/{batch_id}/review-scope"
+
+    premature = client.get(url)
+    assert premature.status_code == 409
+    assert not storage.root().exists()
+
+    started = client.post(f"/api/batches/{batch_id}/apply")
+    assert started.status_code == 202, started.text
+
+    completed = client.get(url)
+    assert completed.status_code == 200, completed.text
+    body = completed.json()
+    assert body["batch_id"] == batch_id
+    assert body["completed"] is True
+    assert body["total_skus"] == 2
+    assert len(body["manifest_sha256"]) == 64
+    assert [row["sku_id"] for row in body["rows"]] == ["sku-one", "sku-two"]
+    assert len({row["poster_id"] for row in body["rows"]}) == 2
+    assert all(len(row["poster_id"]) == 32 for row in body["rows"])
+    assert "request_sha256" not in completed.text
+    assert "product_sha256" not in completed.text
+    assert "idempotency_key" not in completed.text
+    assert str(tmp_path) not in completed.text
+
+    reviewed_ids = {row["poster_id"] for row in body["rows"]}
+    queue = client.get("/api/trials/review-queue?reviewer=local-operator")
+    assert queue.status_code == 200
+    assert reviewed_ids.issubset({
+        item["poster_id"] for item in queue.json()["items"]
+    })
+
+
+def test_web_batch_review_scope_rejects_corrupt_or_inconsistent_journal(
+    monkeypatch, tmp_path,
+):
+    staged = _upload_batch(monkeypatch, tmp_path)
+    assert staged.status_code == 201, staged.text
+    batch_id = staged.json()["batch_id"]
+    assert client.post(f"/api/batches/{batch_id}/apply").status_code == 202
+    batch_dir = tmp_path / "batch-root" / batch_id
+    journal = batch_dir / "batch_import_results.json"
+    original = json.loads(journal.read_text(encoding="utf-8"))
+
+    mismatches = []
+    missing_row = json.loads(json.dumps(original))
+    del missing_row["rows"]["sku-two"]
+    mismatches.append(missing_row)
+    duplicate_poster = json.loads(json.dumps(original))
+    duplicate_poster["rows"]["sku-two"]["poster_id"] = (
+        duplicate_poster["rows"]["sku-one"]["poster_id"]
+    )
+    mismatches.append(duplicate_poster)
+    changed_manifest = json.loads(json.dumps(original))
+    changed_manifest["manifest_sha256"] = "f" * 64
+    mismatches.append(changed_manifest)
+    bad_version = json.loads(json.dumps(original))
+    bad_version["rows"]["sku-one"]["version"] = 999
+    mismatches.append(bad_version)
+
+    for invalid in mismatches:
+        journal.write_text(json.dumps(invalid), encoding="utf-8")
+        assert client.get(f"/api/batches/{batch_id}/review-scope").status_code == 409
+
+    journal.write_text("{broken", encoding="utf-8")
+    assert client.get(f"/api/batches/{batch_id}/review-scope").status_code == 409
+    journal.write_text(json.dumps(original), encoding="utf-8")
+    assert client.get(f"/api/batches/{batch_id}/review-scope").status_code == 200
+
+
+def test_web_batch_handoff_ui_reuses_existing_review_queue():
+    page = client.get("/")
+    assert page.status_code == 200
+    html = page.text
+    assert 'id="reviewCurrentBatch"' in html
+    assert 'id="batchReviewScopeStatus"' in html
+    assert "/review-scope" in html
+    assert "batchReviewScope={ids:" in html
+    assert "loadReviewQueue" in html
+    assert "当前批次已完成" in html

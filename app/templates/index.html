@@ -97,6 +97,7 @@
 <div class="actions">
 <button id="preflightBatch" type="button">上传并预检</button>
 <button id="applyBatch" type="button" disabled>生成海报（本地背景）</button>
+<button id="reviewCurrentBatch" type="button" class="secondary" disabled>审核当前批次</button>
 </div>
 <p id="batchStatus" class="tip" aria-live="polite">尚未选择批次。预检不会创建海报；只有点击生成后才开始处理。</p>
 <progress id="batchProgress" max="100" value="0" aria-label="批量生成进度"></progress>
@@ -1180,6 +1181,7 @@ function resetBatchForNewFiles(){
   lastBatchStatus=null;
   localStorage.removeItem(BATCH_STORAGE_KEY);
   $('applyBatch').disabled=true;
+  $('reviewCurrentBatch').disabled=true;
   $('batchProgress').value=0;
   $('batchRows').replaceChildren();
   $('batchPlanSummary').textContent='';
@@ -1203,6 +1205,7 @@ function renderBatchState(state){
       ' · 收费模型：'+(state.plan.no_paid_model?'不会调用':'需进一步核对')
     : '';
   $('applyBatch').disabled=!['READY','FAILED','INTERRUPTED'].includes(state.status);
+  $('reviewCurrentBatch').disabled=state.status!=='COMPLETED';
   $('applyBatch').textContent=(state.status==='FAILED'||state.status==='INTERRUPTED')
     ? '继续批次' : state.status==='COMPLETED' ? '批次已完成' : '生成海报（本地背景）';
   $('preflightBatch').disabled=state.status==='RUNNING';
@@ -1300,6 +1303,44 @@ $('applyBatch').addEventListener('click',async()=>{
     $('applyBatch').disabled=false;
   }
 });
+
+$('reviewCurrentBatch').addEventListener('click',async()=>{
+  const batchId=currentBatchId;
+  if(!batchId || lastBatchStatus!=='COMPLETED')return;
+  const button=$('reviewCurrentBatch');
+  button.disabled=true;
+  $('batchReviewScopeStatus').textContent='正在核对当前批次的完整导入账本…';
+  try{
+    const response=await fetch('/api/batches/'+encodeURIComponent(batchId)+'/review-scope');
+    const data=await response.json();
+    if(!response.ok)throw Error(errorText(data));
+    if(currentBatchId!==batchId)return;
+    if(!data.completed || data.batch_id!==batchId ||
+       !BATCH_SHA.test(data.manifest_sha256) ||
+       !Array.isArray(data.rows) || data.rows.length!==data.total_skus ||
+       data.rows.length<1 || data.rows.length>100)
+      throw Error('服务器返回的批次范围无效');
+    const ids=new Map();
+    for(const item of data.rows){
+      if(!BATCH_SKU.test(item.sku_id) || !BATCH_POSTER_ID.test(item.poster_id) ||
+         ids.has(item.poster_id))throw Error('批次 SKU 或海报 ID 格式不合法');
+      ids.set(item.poster_id,item.sku_id);
+    }
+    batchReviewScope={ids:ids,manifest_sha256:data.manifest_sha256};
+    $('batchReviewScopeStatus').textContent='当前批次已完成，限定审核 '+ids.size+
+      ' 个 SKU（清单 SHA-256：'+data.manifest_sha256.slice(0,12)+
+      '…）。只做浏览器筛选，不会运行 OCR 或自动批准。';
+    if(lastReviewQueueData)renderReviewQueue(lastReviewQueueData);
+    $('loadReviewQueue').click();
+    $('trialQueue').scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(err){
+    if(currentBatchId===batchId)
+      $('batchReviewScopeStatus').textContent='无法进入当前批次审核：'+err.message;
+  }finally{
+    if(currentBatchId===batchId)button.disabled=lastBatchStatus!=='COMPLETED';
+  }
+});
+
 (async function restoreLastBatch(){
   const saved=localStorage.getItem(BATCH_STORAGE_KEY);
   if(!saved||!/^[a-f0-9]{32}$/.test(saved))return;
