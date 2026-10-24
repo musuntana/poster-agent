@@ -634,19 +634,27 @@ const NATIVE_VISUAL_LABELS={
   title:'主标题',price:'活动价',cta:'CTA',subtitle:'副标题',original_price:'原价'
 };
 $('nativeReviewer').value=localStorage.getItem('poster-native-reviewer')||'local-operator';
-function nativeHumanUrl(posterId,version){
-  return '/api/posters/'+posterId+'/versions/'+version+'/exports/feed_4x5_native/human-review';
+function nativeHumanUrl(posterId,version,variant){
+  return '/api/posters/'+posterId+'/versions/'+version+'/exports/'+variant+'/human-review';
 }
 function nativeReviewExportUrl(){
-  $('exportNativeReview').href='/api/annotations/native-4x5/export.csv?reviewer='+
+  const productFocus=$('channelPreset').value==='feed_4x5_native_product_focus';
+  const path=productFocus
+    ? '/api/annotations/native-4x5-product-focus/export.csv'
+    : '/api/annotations/native-4x5/export.csv';
+  $('exportNativeReview').href=path+'?reviewer='+
     encodeURIComponent($('nativeReviewer').value.trim());
+  $('exportNativeReview').download=productFocus
+    ? 'poster-native-product-focus-4x5-labels.csv'
+    : 'poster-native-4x5-labels.csv';
 }
 async function loadNativeReviewContext(){
   nativeReviewContext=null;
   $('saveNativeReview').disabled=true;
   $('nativeReviewFields').replaceChildren();
   nativeReviewExportUrl();
-  if(!current || $('channelPreset').value!=='feed_4x5_native'){
+  const variant=$('channelPreset').value;
+  if(!current || !['feed_4x5_native','feed_4x5_native_product_focus'].includes(variant)){
     $('nativeHumanPanel').classList.add('hidden');
     return;
   }
@@ -654,12 +662,12 @@ async function loadNativeReviewContext(){
   const posterId=current.poster_id,version=current.version,reviewer=$('nativeReviewer').value.trim();
   $('nativeReviewStatus').textContent='正在读取实际 4:5 海报的摘要…';
   try{
-    const url=nativeHumanUrl(posterId,version)+'?reviewer='+encodeURIComponent(reviewer);
+    const url=nativeHumanUrl(posterId,version,variant)+'?reviewer='+encodeURIComponent(reviewer);
     const response=await fetch(url);
     const info=await response.json();
     if(!response.ok)throw Error(errorText(info));
     if(!current || current.poster_id!==posterId || current.version!==version ||
-       $('channelPreset').value!=='feed_4x5_native' || reviewer!==$('nativeReviewer').value.trim())return;
+       $('channelPreset').value!==variant || reviewer!==$('nativeReviewer').value.trim())return;
     nativeReviewContext=info;
     for(const key of info.fields_to_review){
       const row=document.createElement('div');
@@ -679,8 +687,9 @@ async function loadNativeReviewContext(){
       row.append(label,select,reason);
       $('nativeReviewFields').append(row);
     }
-    $('nativeReviewStatus').textContent='v'+version+' · '+info.review_count+
-      ' 条原生人工审核记录（'+info.distinct_reviewers+' 位代号）；不自动放行';
+    $('nativeReviewStatus').textContent='v'+version+' · '+
+      (variant==='feed_4x5_native_product_focus'?'商品主体优先':'经典分栏')+' · '+
+      info.review_count+' 条人工审核记录（'+info.distinct_reviewers+' 位代号）；不自动放行';
     $('saveNativeReview').disabled=false;
   }catch(e){$('nativeReviewStatus').textContent='无法读取 4:5 审核上下文：'+e.message;}
 }
@@ -689,7 +698,9 @@ $('nativeReviewer').addEventListener('change',()=>{
   loadNativeReviewContext();
 });
 $('saveNativeReview').addEventListener('click',async()=>{
-  if(!current || !nativeReviewContext || $('channelPreset').value!=='feed_4x5_native')return;
+  const variant=$('channelPreset').value;
+  if(!current || !nativeReviewContext ||
+     !['feed_4x5_native','feed_4x5_native_product_focus'].includes(variant))return;
   const posterId=current.poster_id,version=current.version;
   const fields={};
   for(const row of $('nativeReviewFields').querySelectorAll('[data-native-field]')){
@@ -700,7 +711,7 @@ $('saveNativeReview').addEventListener('click',async()=>{
   }
   $('saveNativeReview').disabled=true;
   try{
-    const response=await fetch(nativeHumanUrl(posterId,version),{
+    const response=await fetch(nativeHumanUrl(posterId,version,variant),{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
         reviewer:$('nativeReviewer').value.trim(),fields,
@@ -713,15 +724,16 @@ $('saveNativeReview').addEventListener('click',async()=>{
     const result=await response.json();
     if(!response.ok)throw Error(errorText(result));
     if(current?.poster_id===posterId&&current?.version===version&&
-       $('channelPreset').value==='feed_4x5_native'){
-      $('nativeReviewStatus').textContent='已保存 4:5 审核 '+result.review_id+'；后续更正会新增记录';
+       $('channelPreset').value===variant){
+      $('nativeReviewStatus').textContent='已保存 '+(variant==='feed_4x5_native_product_focus'?'商品主体优先':'经典分栏')+' 4:5 审核 '+result.review_id+'；后续更正会新增记录';
       $('nativeReviewStatus').className='tip good';
     }
   }catch(e){
     $('nativeReviewStatus').textContent='4:5 审核失败：'+e.message;
     $('nativeReviewStatus').className='tip bad';
   }finally{
-    if(current?.poster_id===posterId&&current?.version===version&&nativeReviewContext)
+    if(current?.poster_id===posterId&&current?.version===version&&
+       $('channelPreset').value===variant&&nativeReviewContext)
       $('saveNativeReview').disabled=false;
   }
 });
@@ -751,7 +763,7 @@ function updateChannelExport(){
   $('checkNative').disabled=!isNativeLayout;
   $('nativeOcrMode').disabled=!isNativeLayout;
   $('nativeGateStatus').textContent=isProductFocus
-    ? '商品主体优先版式：已接入独立 OCR / 规则检查；人工审核流程尚未接入。'
+    ? '商品主体优先版式：OCR 报告与人工标签均独立绑定此版式。'
     : '尚未检查当前 v'+current.version+' 的原生 4:5 导出';
   $('nativeGateResult').textContent=isProductFocus
     ? '尚未检查此版式；报告不会继承其他版式结论，且不代表视觉质量或投放审核通过。'
@@ -779,7 +791,7 @@ $('checkNative').addEventListener('click', async () => {
     $('nativeGateResult').textContent=report.checks.map(c=>
       c.status+' | '+c.name+'：'+c.detail).join('\n')+
       '\n\n图片 SHA-256：'+report.native_image_sha256+
-      '\n独立报告：未继承方形版验收结果；'+(variant==='feed_4x5_native_product_focus'?'该版式尚未接入人工标注流程。':'仍需人工确认。');
+      '\n独立报告：未继承方形版验收结果；'+(variant==='feed_4x5_native_product_focus'?'人工标签与该版式独立绑定。':'仍需人工确认。');
   }catch(e){
     $('nativeGateStatus').textContent='验收失败：'+e.message;
     $('nativeGateStatus').className='tip bad';
