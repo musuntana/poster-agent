@@ -14,7 +14,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from app import storage
-from app.native_acceptance import VARIANT, StaleNativeEvidence, verified_report
+from app.native_acceptance import (
+    NATIVE_VARIANTS, VARIANT, NativeVariant, StaleNativeEvidence, verified_report,
+)
 from app.native_human_reviews import VISUAL_FIELDS, CORE_FIELDS, OPTIONAL_FIELDS
 from app.human_annotations import REVIEWER_PATTERN, VALID_ID
 from evals.benchmark import _classification, metrics
@@ -28,8 +30,10 @@ REQUIRED = frozenset({
 DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
 
-def read_native_labels(path: Path) -> list[dict]:
-    """Parse only M5c-native labels: never reinterpret square CSV as native."""
+def read_native_labels(path: Path, *, variant: NativeVariant = VARIANT) -> list[dict]:
+    """Parse only expected native variant labels; never reinterpret square CSV."""
+    if variant not in NATIVE_VARIANTS:
+        raise ValueError("不支持的原生版式")
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
         if not reader.fieldnames or not REQUIRED.issubset(reader.fieldnames):
@@ -47,7 +51,7 @@ def read_native_labels(path: Path) -> list[dict]:
                 reviewer = row["reviewer"].strip()
                 if not VALID_ID.fullmatch(poster_id) or version < 1:
                     raise ValueError("invalid poster/version")
-                if variant != VARIANT or field not in OCR_FIELDS | VISUAL:
+                if row["variant_id"].strip() != variant or field not in OCR_FIELDS | VISUAL:
                     raise ValueError("wrong variant or field")
                 if defective not in {"true", "false"}:
                     raise ValueError("invalid human label")
@@ -89,8 +93,10 @@ def _text_prediction(field: str, checks: dict[str, str]) -> str:
     return "UNVERIFIED"
 
 
-def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
-    records = read_native_labels(annotations)
+def evaluate_native_reports(
+    annotations: Path, output_dir: Path, *, variant: NativeVariant = VARIANT,
+) -> dict:
+    records = read_native_labels(annotations, variant=variant)
     # Validate and collect EVERYTHING before creating any result artifacts.
     # A single missing/failed OCR run or stale hash aborts the whole evaluation.
     report_cache = {}
@@ -101,12 +107,12 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
         key = pid, version
         if key not in report_cache:
             try:
-                report = verified_report(pid, version, "paddle")
+                report = verified_report(pid, version, "paddle", variant=variant)
             except (FileNotFoundError, StaleNativeEvidence, ValueError, OSError) as exc:
                 raise ValueError(f"{pid} v{version}: 缺少有效且未过期的原生 PaddleOCR 验收报告") from exc
             if report.get("ocr_status") != "OK" or report.get("ocr_mode") != "paddle":
                 raise ValueError(f"{pid} v{version}: OCR 未成功执行，拒绝生成准确率指标")
-            if report.get("variant_id") != VARIANT or report.get("image_dimensions") != [1080, 1350]:
+            if report.get("variant_id") != variant or report.get("image_dimensions") != [1080, 1350]:
                 raise ValueError(f"{pid} v{version}: 不是原生 1080×1350 的验收报告")
             checks_list = report.get("checks")
             if not isinstance(checks_list, list):
@@ -129,7 +135,7 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
 
         predicted = _text_prediction(field, checks)
         rows.append({
-            "poster_id": pid, "version": version, "variant_id": VARIANT,
+            "poster_id": pid, "version": version, "variant_id": variant,
             "field": field, "reviewer": record["reviewer"],
             "ground_truth_defective": record["defective"],
             "prediction": predicted,
@@ -153,7 +159,7 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
     output = {
         "schema_version": "1.0",
         "dataset_kind": "native_4x5_human_labeled_poster_versions",
-        "variant_id": VARIANT,
+        "variant_id": variant,
         "ocr_mode": "paddle",
         "ocr_engine_execution": "saved_report_only",
         "ocr_runtime_recorded_versions": runtime_recorded,
@@ -182,7 +188,7 @@ def evaluate_native_reports(annotations: Path, output_dir: Path) -> dict:
         "source_report_sha256": {
             f"{pid}:v{version}": hashlib.sha256(
                 (storage.poster_dir(pid) / "versions"
-                 / f"v{version}.{VARIANT}.acceptance.paddle.json").read_bytes()
+                 / f"v{version}.{variant}.acceptance.paddle.json").read_bytes()
             ).hexdigest()
             for pid, version in sorted(report_cache)
         },
