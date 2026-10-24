@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app import storage
 from app import image_provider
+from app.schemas import PosterSpec
 import pytest
 
 client = TestClient(app)
@@ -138,3 +139,69 @@ def test_editor_exposes_full_copy_and_version_reload():
         assert element in html.text
     assert "expected_version:version" in html.text
     assert "当前海报已有更新版本" in html.text
+
+def test_historical_version_detail_returns_immutable_spec_and_image(tmp_path, monkeypatch, product_bytes):
+    monkeypatch.setenv('POSTER_DATA_DIR', str(tmp_path))
+    created = client.post(
+        '/api/posters',
+        files={'product': ('sku.png', product_bytes, 'image/png')},
+        data={'title': '电动牙刷', 'price': '199', 'background_mode': 'local'},
+    )
+    assert created.status_code == 201, created.text
+    v1 = created.json()
+    v1_png = client.get(v1['image_url']).content
+    edited = client.post(
+        f"/api/posters/{v1['poster_id']}/revisions",
+        json={'expected_version': 1, 'title': '电动牙刷升级款', 'price': '189'},
+    )
+    assert edited.status_code == 201, edited.text
+    v2 = edited.json()
+    old = client.get(f"/api/posters/{v1['poster_id']}/versions/1")
+    latest = client.get(f"/api/posters/{v1['poster_id']}/versions/2")
+    assert old.status_code == latest.status_code == 200
+    assert old.json()['version'] == 1
+    assert old.json()['spec']['title'] == '电动牙刷'
+    assert old.json()['spec']['price'] == '199'
+    assert old.json()['versions'] == [1, 2]
+    assert latest.json()['spec']['title'] == '电动牙刷升级款'
+    assert client.get(old.json()['image_url']).content == v1_png
+    assert client.get(latest.json()['image_url']).content == client.get(v2['image_url']).content
+    assert client.get(f"/api/posters/{v1['poster_id']}/versions/3").status_code == 404
+    assert client.get(f"/api/posters/{v1['poster_id']}/versions/0").status_code == 404
+
+
+def test_unpublished_orphan_version_is_not_exposed_by_api(tmp_path, monkeypatch, product_bytes):
+    monkeypatch.setenv('POSTER_DATA_DIR', str(tmp_path))
+    created = client.post(
+        '/api/posters',
+        files={'product': ('sku.png', product_bytes, 'image/png')},
+        data={'title': '电动牙刷', 'price': '199', 'background_mode': 'local'},
+    )
+    assert created.status_code == 201, created.text
+    poster = created.json()
+    poster_id = poster['poster_id']
+    original_atomic_json = storage._atomic_json
+    def fail_v2_spec(path, value):
+        if path.name == 'v2.json':
+            raise OSError('simulated unpublished version')
+        return original_atomic_json(path, value)
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, '_atomic_json', fail_v2_spec)
+        with pytest.raises(OSError, match='simulated unpublished version'):
+            storage.new_version(poster_id, PosterSpec(title='新版本', price='189'),
+                                client.get(poster['image_url']).content)
+    assert (storage.poster_dir(poster_id) / 'versions' / 'v2.png').is_file()
+    assert client.get(f"/api/posters/{poster_id}/versions/2").status_code == 404
+    assert client.get(f"/api/posters/{poster_id}/versions/2/image").status_code == 404
+    assert client.get(f"/api/posters/{poster_id}/versions/1").status_code == 200
+    assert storage.view(poster_id)['version'] == 1
+
+
+def test_version_gallery_controls_are_available_in_editor():
+    response = client.get('/')
+    assert response.status_code == 200
+    for element in ('id="historyVersionSelect"', 'id="viewHistoryVersion"',
+                    'id="historyVersionPreview"', 'id="historyVersionDownload"'):
+        assert element in response.text
+    assert 'populateHistoryVersions(data)' in response.text
+    assert '当前编辑表单仍对应最新 v' in response.text

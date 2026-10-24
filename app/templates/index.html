@@ -105,6 +105,16 @@
 <div class="actions"><button id="saveEdit" type="submit">保存新版本</button><button id="reloadPoster" class="secondary" type="button">加载最新版本</button><a id="download" href="#" download="poster.png">导出 PNG</a></div>
 </form>
 <div class="tip" id="editStatus"></div><div class="tip" id="history"></div>
+<div class="row mt" id="versionGallery">
+  <label for="historyVersionSelect">历史版本（只读预览，不切换当前编辑版本）</label>
+  <div class="split">
+    <select id="historyVersionSelect" aria-label="选择已发布的历史版本"></select>
+    <button id="viewHistoryVersion" class="secondary" type="button">查看版本</button>
+  </div>
+  <img id="historyVersionPreview" class="preview hidden" alt="历史版本只读预览" loading="lazy">
+  <p id="historyVersionStatus" class="tip" aria-live="polite">选择版本后可查看当时的文案和图片。</p>
+  <a id="historyVersionDownload" class="hidden" href="#" download="poster-history.png">下载此历史版本 PNG</a>
+</div>
 <section class="mt" id="channelFormats">
 <h2>04 · 多渠道导出（原生排版 / 安全缩放）</h2>
 <p class="tip">4:5 可以选择从原商品、Logo、背景和当前规格重新排版；原来的安全缩放导出仍可选。两种方式都不调用 Qwen，也不会自动通过验收。</p>
@@ -462,7 +472,47 @@ async function fingerprintFormData(body){
   return JSON.stringify(entries);
 }
 function errorText(json){const d=json.detail; if(Array.isArray(d))return d.map(e=>e.msg).join('；');return typeof d==='string'?d:'请求失败'}
-function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')}
+function display(data){current=data; updateChannelExport(); $('overlayPanel').classList.add('hidden'); $('overlayPreview').removeAttribute('src'); localStorage.setItem('poster-last-id',data.poster_id); loadHumanContext(); $('gateStatus').textContent='当前版本尚未重新验收'; $('gateResult').textContent='暂无报告'; const url=data.image_url+'?t='+Date.now(); $('preview').src=url; $('source').textContent=data.background_mode==='ai'?'Qwen-Image AI 背景':'本地渐变背景（非 AI）';$('metadata').textContent='海报 ID: '+data.poster_id+'  |  版本 v'+data.version+'  |  可编辑数据已保存';$('editor').classList.remove('hidden');$('editTitle').value=data.spec.title;$('editSubtitle').value=data.spec.subtitle ?? '';$('editPrice').value=data.spec.price;$('editOriginal').value=data.spec.original_price ?? '';$('editCta').value=data.spec.cta;$('download').href=data.image_url;$('download').download='poster-v'+data.version+'.png';$('history').textContent='历史版本：'+data.versions.map(v=>'v'+v).join('、')};populateHistoryVersions(data)
+let historyPreviewRequest=0;
+function populateHistoryVersions(data){
+  const select=$('historyVersionSelect');
+  const selected=select.value;
+  select.replaceChildren();
+  for(const version of [...data.versions].reverse()){
+    const option=document.createElement('option');
+    option.value=String(version);
+    option.textContent='v'+version+(version===data.version?'（当前最新）':'');
+    select.appendChild(option);
+  }
+  if(data.versions.includes(Number(selected)))select.value=selected;
+  else select.value=String(data.version);
+  $('historyVersionPreview').classList.add('hidden');
+  $('historyVersionPreview').removeAttribute('src');
+  $('historyVersionDownload').classList.add('hidden');
+  $('historyVersionStatus').textContent='选择版本后可查看当时的文案和图片。当前编辑表单仍对应 v'+data.version+'。';
+}
+$('viewHistoryVersion').addEventListener('click',async()=>{
+  if(!current)return;
+  const posterId=current.poster_id;
+  const requestedVersion=Number($('historyVersionSelect').value);
+  const request=++historyPreviewRequest;
+  $('historyVersionStatus').textContent='正在读取历史版本…';
+  try{
+    const response=await fetch('/api/posters/'+posterId+'/versions/'+requestedVersion);
+    const data=await response.json();
+    if(!response.ok)throw Error(errorText(data));
+    if(request!==historyPreviewRequest || current?.poster_id!==posterId)return;
+    $('historyVersionPreview').src=data.image_url+'?t='+Date.now();
+    $('historyVersionPreview').classList.remove('hidden');
+    $('historyVersionDownload').href=data.image_url;
+    $('historyVersionDownload').download='poster-v'+data.version+'.png';
+    $('historyVersionDownload').classList.remove('hidden');
+    $('historyVersionStatus').textContent='只读历史 v'+data.version+'：'+data.spec.title+' · 活动价 '+data.spec.price+' · CTA '+data.spec.cta+'。当前编辑表单仍对应最新 v'+current.version+'。';
+  }catch(err){
+    if(request!==historyPreviewRequest)return;
+    $('historyVersionStatus').textContent='读取历史版本失败：'+err.message;
+  }
+});
 // M5i: import the M5g result journal in the browser, never POST it.
 // Only SKU and poster IDs enter the ephemeral in-memory review filter.
 let batchReviewScope=null;
